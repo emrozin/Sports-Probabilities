@@ -9,7 +9,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 6,William Saliba,Arsenal,DEF,injured,0.0,0.0,Back injury - Unknown return date,2026-07-23T12:01:23.289376Z,0,0,0.00,0.00,5.9
 27,Gabriel Fernando de Jesus,Arsenal,FWD,unavailable,0.0,0.0,Has joined FC Barcelona permanently,2026-09-02T16:00:28.475184Z,0,0,0.00,0.00,5.9
 26,Kai Havertz,Arsenal,FWD,available,100.0,100.0,,2026-09-24T22:00:09.120308Z,564,7,2.14,0.42,7.5
-25,Viktor Gyökeres,Arsenal,FWD,available,,,,,80,0,0.08,0.42,7.1
+25,Viktor Gyökeres,Arsenal,FWD,available,,,,,80,0,0.08,0.42,7.0
 1,David Raya Martín,Arsenal,GK,available,,,,,630,7,0.00,0.01,6.1
 3,Illan Meslier,Arsenal,GK,available,,,,,0,0,0.00,0.00,4.9
 2,Kepa Arrizabalaga Revuelta,Arsenal,GK,available,,,,,0,0,0.00,0.00,4.9
@@ -33,7 +33,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 36,Ian Maatsen,Aston Villa,DEF,doubtful,0.0,75.0,Ankle injury - 75% chance of playing,2026-09-12T18:00:08.729468Z,335,4,0.28,0.45,4.4
 39,Kosta Nedeljkovic,Aston Villa,DEF,unavailable,0.0,0.0,Has joined Rangers on loan for the rest of the season,2026-08-19T13:56:46.385411Z,0,0,0.00,0.00,4.0
 30,Lucas Digne,Aston Villa,DEF,unavailable,0.0,0.0,Has joined Paris Saint-Germain permanently,2026-08-10T14:03:30.089007Z,0,0,0.00,0.00,4.5
-596,Matteo Ruggeri,Aston Villa,DEF,injured,0.0,0.0,Hamstring injury - Expected back 2 Jan,2026-10-10T18:00:10.750593Z,158,2,0.03,0.02,4.5
+596,Matteo Ruggeri,Aston Villa,DEF,injured,0.0,0.0,Hamstring injury - Expected back 2 Jan,2026-10-10T18:00:10.750593Z,158,2,0.03,0.02,4.4
 32,Matty Cash,Aston Villa,DEF,available,100.0,100.0,,2026-09-09T14:30:08.192142Z,476,5,0.21,0.06,4.4
 34,Pau Torres,Aston Villa,DEF,available,100.0,100.0,,2026-09-12T18:00:08.712707Z,200,3,0.00,0.01,4.4
 630,Taylor Harwood-Bellis,Aston Villa,DEF,available,,,,,0,0,0.00,0.00,4.5
@@ -263,7 +263,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 217,Matheus França de Oliveira,Crystal Palace,MID,unavailable,0.0,0.0,Has joined Alverca on loan for the rest of the season,2026-09-11T14:42:19.322912Z,0,0,0.00,0.00,4.9
 644,Quinten Timber,Crystal Palace,MID,available,,,,,388,5,0.38,0.14,5.0
 216,Romain Esse,Crystal Palace,MID,unavailable,0.0,0.0,Has joined Millwall on loan for the rest of the season,2026-09-02T15:41:07.376544Z,0,0,0.00,0.00,5.0
-212,Will Hughes,Crystal Palace,MID,available,,,,,38,0,0.00,0.04,4.4
+212,Will Hughes,Crystal Palace,MID,available,,,,,38,0,0.00,0.04,4.3
 211,Yéremy Pino Santos,Crystal Palace,MID,available,,,,,449,6,0.92,0.72,5.5
 595,Zavier Gozo,Crystal Palace,MID,available,,,,,28,0,0.00,0.00,4.9
 235,Adam Aznou,Everton,DEF,unavailable,0.0,0.0,Has joined Malaga on loan for the rest of the season,2026-09-01T13:23:16.934847Z,0,0,0.00,0.00,4.0
@@ -302,7 +302,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 258,Timothy Castagne,Fulham,DEF,available,,,,,498,6,0.67,0.50,4.5
 569,Gonzalo García,Fulham,FWD,available,,,,,595,7,3.46,0.73,6.1
 272,Jonah Kusi-Asare,Fulham,FWD,available,,,,,0,0,0.00,0.00,4.4
-271,Rodrigo Muniz Carvalho,Fulham,FWD,available,,,,,52,0,0.40,0.00,5.4
+271,Rodrigo Muniz Carvalho,Fulham,FWD,available,,,,,52,0,0.40,0.00,5.3
 252,Alfie McNally,Fulham,GK,unavailable,0.0,0.0,Has joined York City on loan for the rest of the season,2026-09-01T13:25:11.231240Z,0,0,0.00,0.00,4.0
 251,Benjamin Lecomte,Fulham,GK,available,,,,,0,0,0.00,0.00,4.0
 250,Bernd Leno,Fulham,GK,available,,,,,630,7,0.00,0.00,4.5
@@ -410,7 +410,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 334,Tarik Muharemović,Leeds,DEF,available,,,,,630,7,0.55,0.21,5.0
 346,Dominic Calvert-Lewin,Leeds,FWD,available,,,,,599,7,3.60,0.13,6.0
 348,Joël Piroe,Leeds,FWD,unavailable,0.0,0.0,Has joined West Ham United on loan for the rest of the season,2026-08-19T13:56:14.666726Z,0,0,0.00,0.00,5.0
-347,Lukas Nmecha,Leeds,FWD,available,,,,,91,0,0.48,0.15,5.4
+347,Lukas Nmecha,Leeds,FWD,available,,,,,91,0,0.48,0.15,5.3
 349,Mateo Joseph Fernández-Regatillo,Leeds,FWD,injured,0.0,0.0,Knee injury - Unknown return date,2026-07-29T18:00:10.338170Z,0,0,0.00,0.00,4.5
 625,Alex Cairns,Leeds,GK,available,,,,,0,0,0.00,0.00,4.0
 385,James Trafford,Leeds,GK,available,,,,,630,7,0.00,0.01,5.0
@@ -433,7 +433,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 360,Conor Bradley,Liverpool,DEF,injured,0.0,0.0,Knee injury - Unknown return date,2026-07-23T12:01:23.565711Z,0,0,0.00,0.00,4.9
 363,Giovanni Leoni,Liverpool,DEF,injured,0.0,0.0,Knee injury - Unknown return date,2026-07-23T12:01:23.596909Z,0,0,0.00,0.00,4.0
 357,Jeremie Frimpong,Liverpool,DEF,injured,,0.0,Hamstring injury - Unknown return date,2026-10-17T15:30:09.979166Z,199,2,0.01,0.24,5.2
-362,Jeremy Jacquet,Liverpool,DEF,available,100.0,100.0,,2026-10-06T00:30:10.323830Z,592,7,0.30,0.15,5.0
+362,Jeremy Jacquet,Liverpool,DEF,available,100.0,100.0,,2026-10-06T00:30:10.323830Z,592,7,0.30,0.15,5.1
 359,Joe Gomez,Liverpool,DEF,available,100.0,100.0,,2026-07-26T08:30:10.078473Z,13,0,0.00,0.00,4.9
 364,Kostas Tsimikas,Liverpool,DEF,available,,,,,64,1,0.04,0.02,4.9
 358,Milos Kerkez,Liverpool,DEF,available,,,,,565,6,0.07,0.11,5.3
@@ -454,7 +454,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 367,Cody Gakpo,Liverpool,MID,available,25.0,100.0,,2026-09-27T21:30:07.786183Z,370,4,0.64,1.71,7.1
 373,Curtis Jones,Liverpool,MID,unavailable,0.0,0.0,Has joined Internazionale permanently,2026-08-16T18:30:07.426408Z,0,0,0.00,0.00,5.5
 368,Dominik Szoboszlai,Liverpool,MID,injured,25.0,0.0,Hamstring injury - Unknown return date,2026-10-17T15:00:08.293301Z,471,6,1.52,1.06,6.8
-374,Endo Wataru,Liverpool,MID,available,100.0,100.0,,2026-07-23T12:01:23.612529Z,0,0,0.00,0.00,4.9
+374,Endo Wataru,Liverpool,MID,available,100.0,100.0,,2026-07-23T12:01:23.612529Z,0,0,0.00,0.00,4.8
 370,Federico Chiesa,Liverpool,MID,available,100.0,100.0,,2026-08-27T13:30:07.598926Z,2,0,0.00,0.00,5.3
 366,Florian Wirtz,Liverpool,MID,available,,,,,557,7,1.16,0.79,7.2
 383,Harvey Elliott,Liverpool,MID,unavailable,0.0,0.0,Has joined Valencia on loan for the rest of the season,2026-09-02T16:05:49.104326Z,0,0,0.00,0.00,5.4
@@ -586,7 +586,7 @@ player_id,name,team,position,status,chance_this_round,chance_next_round,news,new
 468,John Victor Maciel Furtado,Nott'm Forest,GK,available,,,,,0,0,0.00,0.00,4.4
 467,Matz Sels,Nott'm Forest,GK,available,,,,,630,7,0.00,0.02,5.0
 590,Steven Benda,Nott'm Forest,GK,available,,,,,0,0,0.00,0.00,4.5
-482,Callum Hudson-Odoi,Nott'm Forest,MID,available,100.0,100.0,,2026-07-23T12:01:23.832709Z,24,0,0.00,0.08,5.8
+482,Callum Hudson-Odoi,Nott'm Forest,MID,available,100.0,100.0,,2026-07-23T12:01:23.832709Z,24,0,0.00,0.08,5.7
 483,Dan Ndoye,Nott'm Forest,MID,available,,,,,459,7,2.07,0.97,5.5
 485,Dilane Bakwa,Nott'm Forest,MID,unavailable,0.0,0.0,Has joined Lille on loan for the rest of the season,2026-08-27T14:53:03.381941Z,0,0,0.00,0.00,5.5
 488,Ibrahim Sangaré,Nott'm Forest,MID,available,100.0,100.0,,2026-08-28T09:30:07.471668Z,145,1,0.09,0.04,4.8
