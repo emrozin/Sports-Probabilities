@@ -937,9 +937,17 @@ def track_record(request: Request):
                       "scores": live_scores(group), "games": [game_card(g) for g in group.itertuples()]})
     held = backtest_frame()
     long_run = typical_probability(held["model_logloss"].mean()) if held is not None else None
+    from charts import record_chart
+    chart_weeks = []
+    for (season, week), group in sorted(df.groupby(["season", "week"]), key=lambda kv: kv[0]):
+        g = group[(group["home_score"] != group["away_score"])].dropna(subset=["mkt_home"])
+        won = (g["home_score"] > g["away_score"]).to_numpy()
+        chart_weeks.append({"label": f"Wk {week}" if group.iloc[0]["game_type"] == "REG" else group.iloc[0]["game_type"],
+                            "model": np.where(won, g["model_home"], 1 - g["model_home"]),
+                            "benchmark": np.where(won, g["mkt_home"], 1 - g["mkt_home"])})
     return render(request, "track_record.html", {**context, "overall": live_scores(df), "weeks": weeks,
                                                  "first_date": day_label(df["date"].min(), with_year=True),
-                                                 "long_run": long_run})
+                                                 "long_run": long_run, "record_chart": record_chart(chart_weeks, "the betting market")})
 
 
 def backtest_frame() -> pd.DataFrame | None:

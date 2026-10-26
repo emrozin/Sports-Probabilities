@@ -1,0 +1,17 @@
+league,sport,rule,seasons,bets,won,roi,roi_low,roi_high,kelly_final,kept,in_sample,note
+EPL,Premier League,"Original rule, at the average price",2021–2025,1438,0.2761,-0.0972,-0.1857,-0.001,55.5258,False,False,
+EPL,Premier League,Bet at the best price,2021–2025,1747,0.2896,-0.0337,-0.1246,0.0547,101.8177,True,False,"Now used: the best price across bookmakers, not the average."
+EPL,Premier League,Skip games more than 10 pts off the market,2021–2025,1511,0.2945,-0.0221,-0.1175,0.0784,267.7399,False,False,
+EPL,Premier League,"Blend: 25% model, 75% market",2021–2025,1152,0.1997,-0.1263,-0.2465,0.0046,455.2375,False,False,"Held-out log loss: model 0.9733, market 0.9599, blend 0.9611 (lower is better)."
+EPL,Premier League,"Tuned: 25% blend, edges 1%+",2016–2020,1772,0.2833,0.123,0.0101,0.2422,3006.9612,False,True,The seasons it was tuned on: not a fair test.
+EPL,Premier League,"Tuned: 25% blend, edges 1%+",2021–2025,1568,0.2468,-0.0697,-0.1682,0.037,491.5447,False,False,The same rule on new seasons.
+NFL,NFL,Current rule,2018–2025,1545,0.3735,-0.0695,-0.1354,-0.0016,23.7297,True,False,Only one price is available.
+NFL,NFL,Skip games more than 10 pts off the market,2018–2025,1062,0.3682,-0.0666,-0.1541,0.0178,99.2875,False,False,
+NFL,NFL,"Blend: 20% model, 80% market",2018–2025,411,0.2798,-0.1139,-0.2631,0.039,714.0444,False,False,"Held-out log loss: model 0.6295, market 0.6089, blend 0.6104 (lower is better)."
+NFL,NFL,"Tuned: 20% blend, edges 5%+",2010–2017,147,0.3129,0.044,-0.2123,0.318,1117.2827,False,True,The seasons it was tuned on: not a fair test.
+NFL,NFL,"Tuned: 20% blend, edges 5%+",2018–2025,218,0.211,-0.3012,-0.4865,-0.1017,663.7216,False,False,The same rule on new seasons.
+CFB,College football,Current rule,2018–2025,3160,0.3699,-0.1209,-0.1716,-0.0694,0.3886,True,False,Only one price is available.
+CFB,College football,Skip games more than 10 pts off the market,2018–2025,2119,0.3473,-0.1542,-0.2172,-0.0879,5.4284,False,False,
+CFB,College football,"Blend: 5% model, 95% market",2018–2025,24,0.0417,-0.8013,-1.0,-0.4038,994.8313,False,False,"Held-out log loss: model 0.5229, market 0.5044, blend 0.5044 (lower is better)."
+CFB,College football,"Tuned: 5% blend, edges 0%+",2010–2017,278,0.1151,2.1901,-0.3272,6.7171,1042.8567,False,True,The seasons it was tuned on: not a fair test.
+CFB,College football,"Tuned: 5% blend, edges 0%+",2018–2025,118,0.1102,-0.5639,-0.786,-0.3036,989.2889,False,False,The same rule on new seasons.

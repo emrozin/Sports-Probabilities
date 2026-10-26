@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "nba/macros.html" import game_card, scorecard %}
+{% from "charts.html" import chance_columns %}
+{% block title %}{{ team }} | NBA probabilities{% endblock %}
+{% block main_style %} class="teamed team-page" style="{{ nba_team_colors(team) }}"{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow"><a href="{{ base }}/nba/standings/{% if division %}?view=division{% endif %}">{{ conference }}ern Conference{% if division %}, {{ division }}{% endif %}</a></p>
+  <h1>{{ team }}</h1>
+  <p>{{ record }} in {{ season }}.{% if rating %} Rating with today's lineup: {{ rating }} points per game against an average team.{% endif %}</p>
+  {% if seasons|length > 1 %}
+  <div class="season-picker"><label for="season">Season</label>
+    <select id="season" onchange="window.location.href = this.value">{% for s in seasons %}<option value="{{ s.url }}" {% if s.selected %}selected{% endif %}>{{ s.label }}</option>{% endfor %}</select>
+  </div>{% endif %}
+</div>
+{{ scorecard(summary) }}
+{% if roster %}
+<section class="game-section">
+  <h2>Roster</h2>
+  <p class="section-note">Each player's usual minutes (recent games), his expected minutes now (the team's 240, shared among the available players), and his rating.</p>
+  <div class="table-wrap">
+    <table class="league lineup-table">
+      <thead><tr><th scope="col">Player</th><th scope="col" class="num">Usual min</th><th scope="col" class="num">Now</th><th scope="col" class="num">Rating</th><th scope="col" class="wide-only">Status</th></tr></thead>
+      <tbody>{% for r in roster %}<tr{% if r.out %} class="is-out"{% endif %}><th scope="row">{{ r.name }}</th><td class="num">{{ r.usual }}</td><td class="num">{{ r.minutes }}</td><td class="num muted">{{ r.rating }}</td>
+        <td class="wide-only small">{% if r.out %}{{ r.out.status }}{% if r.out.comment %}: {{ r.out.comment }}{% endif %}{% if r.out.back %} (back {{ r.out.back }}){% endif %}{% endif %}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% if chance_chart %}<section class="team-charts">{{ chance_columns(chance_chart, 'Win chance, game by game', team) }}</section>{% endif %}
+{% if coming %}<section class="day"><h2>Coming up</h2><ul class="matches">{% for g in coming %}{{ game_card(g, current_team=team) }}{% endfor %}</ul></section>{% endif %}
+{% if schedule %}
+<section class="day"><h2>Next on the schedule</h2>
+  <ul class="h2h-list schedule-list">{% for g in schedule %}<li><span class="h2h-date">{{ g.date }}</span><a class="team-link" href="{{ nba_team_url(g.opponent) }}">{{ g.venue }} <strong>{{ g.opponent }}</strong></a></li>{% endfor %}</ul>
+  <p class="note">Forecasts appear up to eight days before each game.</p>
+</section>
+{% endif %}
+{% if played %}<section class="day"><h2>Games, most recent first</h2><ul class="matches">{% for g in played %}{{ game_card(g, current_team=team) }}{% endfor %}</ul></section>{% endif %}
+{% endblock %}

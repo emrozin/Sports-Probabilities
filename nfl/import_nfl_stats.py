@@ -22,8 +22,9 @@ from nfl.import_nfl import FRANCHISES
 
 BASE_URL = "https://github.com/nflverse/nflverse-data/releases/download"
 FILES = {"team": "stats_team/stats_team_week_{season}.csv", "player": "stats_player/stats_player_week_{season}.csv",
-         "injuries": "injuries/injuries_{season}.csv", "snaps": "snap_counts/snap_counts_{season}.csv"}
-FIRST = {"team": 1999, "player": 1999, "injuries": 2009, "snaps": 2013}
+         "injuries": "injuries/injuries_{season}.csv", "snaps": "snap_counts/snap_counts_{season}.csv",
+         "rosters": "weekly_rosters/roster_weekly_{season}.csv"}
+FIRST = {"team": 1999, "player": 1999, "injuries": 2009, "snaps": 2013, "rosters": 2009}
 CACHE_DIR = RAW_DIR / "nfl_stats"
 FIRST_SEASON = 1999
 
@@ -38,7 +39,9 @@ PLAYER_COLUMNS = {"completions": "completions", "attempts": "pass_attempts", "pa
 REQUIRED = {"team": ["game_id", "team", *TEAM_COLUMNS], "player": ["game_id", "team", "player_id",
                                                                     "player_display_name", "position", *PLAYER_COLUMNS],
             "injuries": ["season", "week", "team", "gsis_id", "full_name", "position", "report_status"],
-            "snaps": ["game_id", "team", "player", "position", "offense_snaps", "offense_pct"]}
+            "snaps": ["game_id", "team", "player", "position", "offense_snaps", "offense_pct"],
+            "rosters": ["season", "week", "team", "gsis_id", "full_name", "position", "status"]}
+TRIMMED = {"rosters"}   # cached with only the columns used (the full files are large)
 
 
 def current_season(today: date | None = None) -> int:
@@ -55,7 +58,11 @@ def fetch(kind: str, season: int, refresh: bool) -> pd.DataFrame | None:
         if response.status_code == 404:
             return None
         response.raise_for_status()
-        path.write_bytes(response.content)
+        if kind in TRIMMED:
+            full = pd.read_csv(io.BytesIO(response.content), low_memory=False)
+            full.reindex(columns=REQUIRED[kind]).to_csv(path, index=False)
+        else:
+            path.write_bytes(response.content)
     df = pd.read_csv(io.BytesIO(path.read_bytes()), low_memory=False)
     missing = [c for c in REQUIRED[kind] if c not in df.columns]
     if missing:
@@ -71,6 +78,18 @@ def store_injuries(conn, df: pd.DataFrame) -> int:
              r.report_status if isinstance(r.report_status, str) else None) for r in df.itertuples()]
     conn.executemany("DELETE FROM nfl_injuries WHERE season = ?", [(s,) for s in set(df["season"].astype(int))])
     conn.executemany("INSERT OR REPLACE INTO nfl_injuries VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    return len(rows)
+
+
+def store_rosters(conn, df: pd.DataFrame) -> int:
+    """Write one season's weekly rosters (each player's status every week: active, injured reserve,
+    practice squad...), replacing that season's stored rosters. Returns rows written."""
+    df = df.dropna(subset=["gsis_id", "team", "week"]).copy()
+    df["team"] = df["team"].replace(FRANCHISES)
+    rows = [(int(r.season), int(r.week), r.team, r.gsis_id, r.full_name, r.position,
+             r.status if isinstance(r.status, str) else None) for r in df.itertuples()]
+    conn.executemany("DELETE FROM nfl_rosters WHERE season = ?", [(s,) for s in set(df["season"].astype(int))])
+    conn.executemany("INSERT OR REPLACE INTO nfl_rosters VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
     return len(rows)
 
 
@@ -110,6 +129,8 @@ def store(conn, kind: str, df: pd.DataFrame, game_ids: dict) -> int:
     """Write one season's rows, replacing any already stored for those games. Returns rows written."""
     if kind == "injuries":
         return store_injuries(conn, df)
+    if kind == "rosters":
+        return store_rosters(conn, df)
     if kind == "snaps":
         return store_snaps(conn, df, game_ids)
     columns = TEAM_COLUMNS if kind == "team" else PLAYER_COLUMNS
@@ -141,9 +162,9 @@ def main() -> None:
     if not game_ids:
         raise SystemExit("No NFL games found. Run python -m nfl.import_nfl first.")
     latest = current_season()
-    totals = {"team": 0, "player": 0, "injuries": 0, "snaps": 0}
+    totals = {"team": 0, "player": 0, "injuries": 0, "snaps": 0, "rosters": 0}
     for season in range(FIRST_SEASON, latest + 1):
-        for kind in ("team", "player", "injuries", "snaps"):   # snaps after players: they're matched to them
+        for kind in ("team", "player", "injuries", "snaps", "rosters"):   # snaps after players: they're matched to them
             if season < FIRST[kind]:
                 continue
             df = fetch(kind, season, refresh=season == latest)
@@ -153,7 +174,8 @@ def main() -> None:
     conn.close()
     print(f"Stored {totals['team']:,} team-game and {totals['player']:,} player-game stat rows ({FIRST_SEASON}-{latest}) "
           f"{totals['injuries']:,} injury report entries ({FIRST['injuries']}-{latest}) "
-          f"and {totals['snaps']:,} snap counts ({FIRST['snaps']}-{latest}).")
+          f"{totals['snaps']:,} snap counts ({FIRST['snaps']}-{latest}) "
+          f"and {totals['rosters']:,} weekly roster entries ({FIRST['rosters']}-{latest}).")
 
 
 if __name__ == "__main__":

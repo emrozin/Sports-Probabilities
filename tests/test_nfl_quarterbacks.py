@@ -77,3 +77,49 @@ def test_overrides_file_names_the_starter(conn, tmp_path):
                  "VALUES (5, '2026_05_NE_SEA', 'REG', 5, 0)")
     games = pd.DataFrame([game(5, 5, "scheduled", "SEA", "NE", "Backup", "Other")])
     assert correct_quarterbacks(conn, games, overrides=overrides).at[0, "home_qb"] == "Third"
+
+
+def roster(conn, rows):
+    conn.executemany("INSERT INTO nfl_rosters (season, week, team, player_id, name, position, status) "
+                     "VALUES (2026, ?, ?, ?, ?, 'QB', ?)", [(w, team, name.lower(), name, status) for w, team, name, status in rows])
+
+
+def test_a_listed_starter_on_injured_reserve_is_replaced_by_the_backup_who_started_before(conn):
+    # Like the Eagles in October 2026: the schedule still lists Hurts, who went on injured reserve;
+    # McKee started for the team before (last season), Payton never has; Dalton was released.
+    games = pd.DataFrame([game(1, 1, "final", "PHI", "NE", "Tanner McKee", "Other", season=2025),
+                          game(2, 1, "final", "PHI", "NE", "Jalen Hurts", "Other"),
+                          game(3, 2, "scheduled", "PHI", "NE", "Jalen Hurts", "Other")])
+    passes(conn, [(1, "PHI", "Tanner McKee", 40), (2, "PHI", "Jalen Hurts", 30), (2, "PHI", "Andy Dalton", 1)])
+    roster(conn, [(2, "PHI", "Jalen Hurts", "RES"), (2, "PHI", "Tanner McKee", "ACT"), (2, "PHI", "Cole Payton", "ACT"),
+                  (2, "PHI", "Andy Dalton", "CUT")])
+    fixed = correct_quarterbacks(conn, games, overrides={}).set_index("id")
+    assert fixed.at[3, "home_qb"] == "Tanner McKee" and fixed.at[3, "home_qb_listed"] == "Jalen Hurts"
+    assert fixed.at[2, "home_qb"] == "Jalen Hurts"           # finished games go by the box score
+
+
+def test_the_latest_roster_counts_until_the_next_one_is_out(conn):
+    games = pd.DataFrame([game(1, 1, "final", "PHI", "NE", "Jalen Hurts", "Other"),
+                          game(2, 3, "scheduled", "PHI", "NE", "Jalen Hurts", "Other")])
+    passes(conn, [(1, "PHI", "Jalen Hurts", 30)])
+    roster(conn, [(2, "PHI", "Jalen Hurts", "RES"), (2, "PHI", "Tanner McKee", "ACT")])   # no week 3 roster yet
+    assert correct_quarterbacks(conn, games, overrides={}).at[1, "home_qb"] == "Tanner McKee"
+
+
+def test_overrides_only_apply_to_games_not_yet_played(conn):
+    conn.execute("INSERT INTO nfl_game_info (game_id, source_game_id, game_type, week, neutral_site) "
+                 "VALUES (1, '2026_01_NE_PHI', 'REG', 1, 0)")
+    games = pd.DataFrame([game(1, 1, "final", "PHI", "NE", "Jalen Hurts", "Other")])
+    passes(conn, [(1, "PHI", "Tanner McKee", 45)])
+    fixed = correct_quarterbacks(conn, games, overrides={("2026_01_NE_PHI", "PHI"): "Andy Dalton"})
+    assert fixed.at[0, "home_qb"] == "Tanner McKee"          # the wrong guess doesn't reach the ratings
+
+
+def test_players_on_injured_reserve_count_as_out_for_projections(conn):
+    from nfl.players import load_injuries
+    conn.execute("INSERT INTO nfl_rosters VALUES (2026, 6, 'PHI', 'hurts', 'Jalen Hurts', 'QB', 'RES')")
+    conn.execute("INSERT INTO nfl_rosters VALUES (2026, 6, 'PHI', 'brown', 'A.J. Brown', 'WR', 'ACT')")
+    conn.execute("INSERT INTO nfl_injuries VALUES (2026, 6, 'PHI', 'brown', 'A.J. Brown', 'WR', 'Questionable')")
+    reports = load_injuries(conn)
+    assert reports[(2026, 6, "PHI")] == {"brown": "Questionable", "hurts": "Out"}
+    assert reports[(2026, 7, "PHI")] == {"hurts": "Out"}     # carried to the next week

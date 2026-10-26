@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "cfb/macros.html" import conference_filter %}
+{% block title %}Conference title odds | College football probabilities{% endblock %}
+
+{% macro pct_cell(c, extra='') %}<td class="num odds-cell {{ extra }}" style="--strength: {{ c.value }}">{{ c.text }}</td>{% endmacro %}
+
+{% block content %}
+<div class="intro">
+  <h1>Conference title odds{% if season %}: {{ season }}{% endif %}</h1>
+  {% if groups %}
+  <p class="lede">Each team's chance of reaching and winning its conference title game, from the rest of the season played out {{ simulations }} times. Updated {{ as_of }}.</p>
+  <details class="explain">
+    <summary>How this works</summary>
+    <p>Every remaining game gets a random result from the model: its expected margin plus the usual game-to-game spread. Each simulated season also shifts every team's rating by a random amount (typically about {{ rating_sd }} points), because ratings are estimates, and a team's real strength can be quite different from what a dozen games show.</p>
+    <p>The top two teams in conference play meet in the title game (in the Sun Belt, the East and West division winners). Ties are settled by head-to-head record among the tied teams, then overall record, then the model's rating. That's close to, but simpler than, each conference's real tiebreakers. The title game is played at a neutral site for the ACC, Big Ten, Big 12, SEC, Pac-12 and MAC, and at the higher seed's stadium for the rest.</p>
+    <p>Tested on the 2024 and 2025 seasons (72 conference races, odds made before weeks 1, 5, 9 and 12): the eventual champion was given about a 13% chance on average, against 7% for picking a team at random, and 23% by week 12. The chances are honest: teams given 15&ndash;30% won 20% of the time, and 30&ndash;50% won 34%. A dash means it didn't happen in any simulation; that's not the same as being eliminated.</p>
+  </details>
+  {% endif %}
+</div>
+{% if conferences %}{{ conference_filter(conferences, conference, base_url) }}{% endif %}
+{% if groups %}
+<div class="standings-grid">
+  {% for g in groups %}
+  <section class="division odds-conference">
+    <h2>{{ g.label }}</h2>
+    <div class="table-wrap">
+      <table class="league odds-table">
+        <thead>
+          <tr>
+            <th scope="col">Team</th>
+            <th scope="col" class="num">Conf</th>
+            <th scope="col" class="num wide-only"><abbr title="Average final conference record in the simulations">Proj.</abbr></th>
+            <th scope="col" class="num"><abbr title="Chance of reaching the conference title game">Title game</abbr></th>
+            <th scope="col" class="num">Champion</th>
+            {% if before_as_of %}<th scope="col" class="num wide-only"><abbr title="Change in title chance since {{ before_as_of }}">Week</abbr></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in g.rows %}
+          <tr>
+            <th scope="row">{{ cfb_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
+            <td class="num"><strong>{{ r.conf }}</strong></td>
+            <td class="num wide-only muted">{{ r.conf_wins }}</td>
+            {{ pct_cell(r.title_game) }}
+            {{ pct_cell(r.champion, 'odds-main') }}
+            {% if before_as_of %}<td class="num wide-only change change-{{ r.change.dir if r.change else '' }}">{{ r.change.text if r.change else '' }}</td>{% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+<p class="note">Odds are saved to a public file on every update, so their history can be checked too.</p>
+{% else %}
+<section class="empty">
+  <h2>No conference odds yet</h2>
+  <p>Run <code>python -m cfb.conference</code> to simulate the rest of the season.</p>
+</section>
+{% endif %}
+{% endblock %}

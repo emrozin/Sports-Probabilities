@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "nba/macros.html" import game_card, scorecard %}
+{% block title %}Results | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Results vs predictions</h1>
+  <p class="lede">How the model's forecasts compared with what happened.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>The big numbers are the final score; in the bars, the winner's side is in full color. "Backtest" games were predicted the way live ones are, from earlier games only and with the lineup known, before this site existed.</p>
+  </details>
+</div>
+{% if days %}
+  <nav class="week-nav" aria-label="Weeks">
+    {% if previous_url %}<a href="{{ previous_url }}">&larr; Previous week</a>{% else %}<span></span>{% endif %}
+    <p class="week-label">{{ label }}</p>
+    {% if next_url %}<a href="{{ next_url }}">Next week &rarr;</a>{% else %}<span></span>{% endif %}
+  </nav>
+  {{ scorecard(summary) }}
+  {% for day in days %}
+  <section class="day"><h2>{{ day.label }}</h2><ul class="matches">{% for g in day.games %}{{ game_card(g) }}{% endfor %}</ul></section>
+  {% endfor %}
+{% else %}
+  <section class="empty"><h2>No results yet</h2><p>Run <code>python -m nba.import_nba</code> and <code>python -m nba.run_backtest</code>.</p></section>
+{% endif %}
+{% endblock %}

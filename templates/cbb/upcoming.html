@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% from "cbb/macros.html" import game_card, conference_filter %}
+{% block title %}Upcoming games | College basketball probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Upcoming games</h1>
+  <p class="lede">The model's chance of each team winning, for every Division I game in the next eight days.</p>
+  <details class="explain">
+    <summary>How to read this</summary>
+    <p>The big numbers are the model's chance of each team winning; the bar shows the same split, and the table the expected margin and total points. Where ESPN shows a betting line (DraftKings), the thin bar and the second row give the market's view, with the bookmaker's margin taken out. There are no free historical lines for college basketball, so the backtest compares the model with a simple Elo rating instead. The conference shown next to each team is its conference this season.</p>
+  </details>
+</div>
+{{ conference_filter(conferences, conference, base ~ '/cbb/') }}
+{% if days %}
+  {% for day in days %}
+  <section class="day">
+    <h2>{{ day.label }}</h2>
+    <ul class="matches">{% for g in day.games %}{{ game_card(g) }}{% endfor %}</ul>
+  </section>
+  {% endfor %}
+  <p class="note">Predictions are saved before kickoff and never changed afterwards: see the <a href="{{ base }}/cbb/track-record/">track record</a>.</p>
+{% else %}
+  <section class="empty">
+    <h2>No upcoming games predicted{% if conference %} for the {{ conference }}{% endif %}</h2>
+    <p>{% if season_starts %}The season tips off on {{ season_starts }}; forecasts appear up to eight days before each game.{% else %}Predictions for the next eight days are made on Tuesdays and Fridays.{% endif %} Run <code>python -m cbb.predict_upcoming</code> to make them now.</p>
+    <p><a class="button" href="{{ base }}/cbb/results/">See recent results</a></p>
+  </section>
+{% endif %}
+{% endblock %}

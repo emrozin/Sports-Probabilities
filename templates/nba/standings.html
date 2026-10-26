@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Standings | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>{% if is_current %}Standings{% else %}{{ season }} standings{% endif %}</h1>
+  {% if groups %}
+  <p class="lede">Regular-season records{% if is_current %}, with each team's current rating{% endif %}. The top six in each conference go straight to the playoffs; 7th to 10th play in the play-in.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>GB is games behind the leader. Diff is the average winning margin. "Rating" is the model's points per game better or worse than an average team with a healthy roster: its players' ratings weighted by their usual minutes, plus a team term. The NBA Cup final isn't counted, as in the official standings. Ties are shown by record only; the NBA's tiebreakers aren't applied.</p>
+  </details>
+  <div class="season-picker"><label for="season">Season</label>
+    <select id="season" onchange="window.location.href = this.value">{% for s in seasons %}<option value="{{ s.url }}" {% if s.selected %}selected{% endif %}>{{ s.label }}</option>{% endfor %}</select>
+  </div>
+  {% endif %}
+</div>
+{% if groups %}
+<nav class="filter-chips" aria-label="View">
+  <a href="{{ base_url }}?view=conference" {% if view == 'conference' %}aria-current="page"{% endif %}>By conference</a>
+  <a href="{{ base_url }}?view=division" {% if view == 'division' %}aria-current="page"{% endif %}>By division</a>
+</nav>
+<div class="standings-grid">
+  {% for g in groups %}
+  <section class="division">
+    <h2>{{ g.label }}</h2>
+    <div class="table-wrap">
+      <table class="league nfl-standings">
+        <thead><tr><th scope="col">Team</th><th scope="col" class="num">W</th><th scope="col" class="num">L</th><th scope="col" class="num">Pct</th>
+          <th scope="col" class="num">GB</th><th scope="col" class="num wide-only">Home</th><th scope="col" class="num wide-only">Away</th>
+          <th scope="col" class="num">Diff</th>{% if is_current %}<th scope="col" class="num">Rating</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for r in g.rows %}
+          <tr{% if r.line %} class="cut-line"{% endif %}><th scope="row"><span class="rank">{{ r.rank }}</span>{{ nba_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
+            <td class="num"><strong>{{ r.won }}</strong></td><td class="num">{{ r.lost }}</td><td class="num">{{ r.pct }}</td><td class="num">{{ r.gb }}</td>
+            <td class="num wide-only">{{ r.home }}</td><td class="num wide-only">{{ r.away }}</td><td class="num">{{ r.diff }}</td>
+            {% if is_current %}<td class="num muted">{{ r.rating or '' }}</td>{% endif %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<section class="empty"><h2>No standings yet</h2><p>Run <code>python -m nba.import_nba</code> first.</p></section>
+{% endif %}
+{% endblock %}

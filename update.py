@@ -21,10 +21,28 @@ NFL (nfl/):
     5. predict_players     player projections for those games, saved before kickoff
     6. season              playoff odds: the rest of the season simulated 10,000 times
 
+NBA (nba/):
+    1. import_nba          games, results and player box scores from sportsdataverse-data
+    2. live                current rosters and the injury report from ESPN
+    3. run_backtest        backtest predictions for the current season
+    4. predict_upcoming    predictions for the next 8 days' games, saved before tip-off
+    5. predict_players     player projections (points, rebounds, assists, threes) for those games
+    6. season              playoff odds: the rest of the season simulated 10,000 times
+
 College football (cfb/):
     1. import_cfb          games, results and betting lines from cfbfastR-data
     2. run_backtest        backtest predictions, now including the latest games
     3. predict_upcoming    predictions for the next 8 days' games, saved before kickoff
+    4. conference          conference title odds: the rest of the season simulated 10,000 times
+
+College basketball (cbb/):
+    1. import_cbb          games and results from sportsdataverse-data
+    2. run_backtest        backtest predictions, now including the latest games
+    3. predict_upcoming    predictions for the next 8 days' games, saved before tip-off
+
+Betting lines (espn.py): ESPN's lines for recent and upcoming NBA, college basketball and college
+football games, saved as the season goes (run last, after every sport's games are imported); then
+betting.py logs the bets its rule suggests, for the betting page's live record.
 
 Each step is a module run with "python -m", e.g. python -m epl.import_epl. Within a sport, a
 failed step stops that sport's remaining steps (they depend on it), but the other sport still
@@ -58,14 +76,33 @@ SPORTS = {
         ("nfl.predict_players", "Player projections for upcoming games"),
         ("nfl.season", "Playoff odds (season simulation)"),
     ],
+    "NBA": [
+        ("nba.import_nba", "Games, results and box scores"),
+        ("nba.live", "Rosters and injury report (ESPN)"),
+        ("nba.run_backtest", "Backtest predictions"),
+        ("nba.predict_upcoming", "Predictions for upcoming games"),
+        ("nba.predict_players", "Player projections for upcoming games"),
+        ("nba.season", "Playoff odds (season simulation)"),
+    ],
     "College football": [
         ("cfb.import_cfb", "Games, results and lines"),
         ("cfb.run_backtest", "Backtest predictions"),
         ("cfb.predict_upcoming", "Predictions for upcoming games"),
+        ("cfb.conference", "Conference title odds (season simulation)"),
+    ],
+    "College basketball": [
+        ("cbb.import_cbb", "Games and results"),
+        ("cbb.run_backtest", "Backtest predictions"),
+        ("cbb.predict_upcoming", "Predictions for upcoming games"),
+    ],
+    "Betting lines": [
+        ("espn", "Lines for NBA and college games (ESPN)"),
+        ("betting", "Suggested bets, logged (betting.py)"),
     ],
 }
 RECORDING_STEPS = {"epl.predict_upcoming", "nfl.predict_upcoming", "nfl.predict_players", "nfl.season",
-                   "cfb.predict_upcoming"}
+                   "nba.live", "nba.predict_upcoming", "nba.predict_players", "nba.season",
+                   "cfb.predict_upcoming", "cfb.conference", "cbb.predict_upcoming", "espn", "betting"}
 BUILD_STEP = ("build_site", "Static website (docs/)")
 
 

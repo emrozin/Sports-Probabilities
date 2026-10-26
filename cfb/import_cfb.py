@@ -12,6 +12,10 @@ Only games between two top-division schools (FBS) or second-division ones (FCS) 
 FCS games are there to rate the FCS teams that FBS teams play. Betting lines are turned into one
 consensus per game: each sportsbook's moneyline with its margin removed, averaged, plus the
 median spread and total. Safe to re-run: existing games are updated.
+
+Starting quarterbacks (2014 on) come from the play-by-play player stats: the player with the most
+dropbacks for each team. Those files are large (30-60 MB a season), so each season is boiled down to
+a small file of starters (data/raw/cfb/starters_<season>.csv) and the big file isn't kept.
 """
 
 import gzip
@@ -29,6 +33,8 @@ from db import DB_PATH, RAW_DIR, SCHEMA_PATH, as_int, get_team_id, insert_price
 BASE_URL = "https://raw.githubusercontent.com/sportsdataverse/cfbfastR-data/main"
 SCHEDULE_URL = BASE_URL + "/schedules/csv/cfb_schedules_{season}.csv"
 LINES_URL = BASE_URL + "/betting/csv/cfb_line_odds.csv.gz"
+PLAYERS_URL = BASE_URL + "/player_stats/csv/player_stats_{season}.csv"
+PLAYERS_FROM = 2014   # the first season with player stats
 RAW = RAW_DIR / "cfb"
 FIRST_SEASON = 2001
 LEAGUE = ("CFB", "College football (FBS)", "american_football")
@@ -128,6 +134,65 @@ def load_lines(games: pd.DataFrame) -> pd.DataFrame:
     return consensus_lines(lines, games)
 
 
+# ---------------------------------------------------------------- starting quarterbacks
+
+PASSER_COLUMNS = [("completion_player_id", "completion_player"), ("incompletion_player_id", "incompletion_player"),
+                  ("interception_thrown_player_id", "interception_thrown_player"),
+                  ("sack_taken_player_id", "sack_taken_player")]
+
+
+def starters_from_plays(plays: pd.DataFrame) -> pd.DataFrame:
+    """Each team's main quarterback in each game: the player with the most dropbacks (completions,
+    incompletions, interceptions and sacks), and how many he had."""
+    ids = names = None
+    for id_col, name_col in PASSER_COLUMNS:
+        ids = plays[id_col] if ids is None else ids.fillna(plays[id_col])
+        names = plays[name_col] if names is None else names.fillna(plays[name_col])
+    passes = plays.assign(qb_id=ids, qb_name=names, order=pd.to_numeric(plays["play_id"], errors="coerce"))
+    passes = passes.dropna(subset=["qb_id", "qb_name", "team"])
+    passes["qb_id"] = passes["qb_id"].astype("int64").astype(str)
+    attempts = (passes.groupby(["game_id", "team", "qb_id"]).agg(qb_name=("qb_name", "first"), attempts=("qb_id", "size"))
+                .reset_index())
+    # the player with the most dropbacks: the first passer is sometimes a trick play or a wildcat snap
+    return (attempts.sort_values("attempts", ascending=False).drop_duplicates(["game_id", "team"])
+            .sort_values(["game_id", "team"]).reset_index(drop=True))
+
+
+def load_starters(seasons, latest: int) -> pd.DataFrame:
+    frames = []
+    for season in seasons:
+        if season < PLAYERS_FROM:
+            continue
+        path = RAW / f"starters_{season}.csv"
+        if not path.exists() or season >= latest:
+            content = requests.get(PLAYERS_URL.format(season=season), timeout=600)
+            if content.status_code == 404:
+                continue
+            content.raise_for_status()
+            columns = ["game_id", "team", "play_id"] + [c for pair in PASSER_COLUMNS for c in pair]
+            plays = pd.read_csv(io.BytesIO(content.content), usecols=columns, low_memory=False)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            starters_from_plays(plays).to_csv(path, index=False)
+        frames.append(pd.read_csv(path, dtype={"qb_id": str}))
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["game_id", "team", "qb_id", "qb_name", "attempts"])
+
+
+def import_starters(conn, starters: pd.DataFrame) -> int:
+    """Match each starter to his game and side (home/away) and store him."""
+    games = pd.read_sql("""SELECT i.game_id, i.source_game_id, h.name AS home, a.name AS away FROM cfb_game_info i
+                           JOIN games g ON g.id = i.game_id JOIN teams h ON h.id = g.home_team_id
+                           JOIN teams a ON a.id = g.away_team_id""", conn)
+    games["source_game_id"] = games["source_game_id"].astype(str)
+    starters = starters.assign(source_game_id=starters["game_id"].astype("int64").astype(str)).drop(columns="game_id")
+    merged = starters.merge(games, on="source_game_id")
+    merged["side"] = np.where(merged["team"] == merged["home"], "home", np.where(merged["team"] == merged["away"], "away", None))
+    merged = merged.dropna(subset=["side"])
+    conn.executemany("INSERT OR REPLACE INTO cfb_starters (game_id, side, qb_id, qb_name, attempts) VALUES (?, ?, ?, ?, ?)",
+                     merged[["game_id", "side", "qb_id", "qb_name", "attempts"]].itertuples(index=False, name=None))
+    conn.commit()
+    return len(merged)
+
+
 # ---------------------------------------------------------------- the database
 
 def get_league_id(conn) -> int:
@@ -160,16 +225,19 @@ def import_games(conn, schedule: pd.DataFrame, lines: pd.DataFrame | None = None
         existing = conn.execute("SELECT game_id FROM cfb_game_info WHERE source_game_id = ?", (source_id,)).fetchone()
         if existing:
             game_id = existing[0]
-            conn.execute("UPDATE games SET date = ?, kickoff = ?, home_score = ?, away_score = ?, status = ?, "
+            # OR IGNORE: if the source moves a game onto a date where the same teams already have a
+            # (duplicate) game, keep the old date rather than stop the import
+            conn.execute("UPDATE OR IGNORE games SET date = ?, kickoff = ?, home_score = ?, away_score = ?, status = ?, "
                          "home_team_id = ?, away_team_id = ? WHERE id = ?", (*values, home, away, game_id))
             counts["updated"] += 1
         else:
-            game_id = conn.execute(
+            cursor = conn.execute(
                 """INSERT OR IGNORE INTO games (league_id, season, date, kickoff, home_score, away_score, status,
                                                 home_team_id, away_team_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (league_id, int(row["season"]), *values, home, away)).lastrowid
-            if not game_id:
+                (league_id, int(row["season"]), *values, home, away))
+            if cursor.rowcount == 0:
                 continue   # the same teams on the same day twice: a duplicate row in the source
+            game_id = cursor.lastrowid   # (after an ignored insert, lastrowid would be the previous game's)
             counts["new"] += 1
         line = lines.loc[int(row["game_id"])] if int(row["game_id"]) in lines.index else None
         conn.execute("""INSERT OR REPLACE INTO cfb_game_info
@@ -204,11 +272,12 @@ def main() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     counts = import_games(conn, schedule, lines)
+    starters = import_starters(conn, load_starters(seasons, max(seasons)))
     teams = conn.execute("SELECT COUNT(*) FROM teams t JOIN leagues l ON l.id = t.league_id WHERE l.code = 'CFB'").fetchone()[0]
     conn.close()
     print(f"College football {min(seasons)}-{max(seasons)}: {counts['final']} games played, "
           f"{counts['scheduled']} still to play; {counts['new']} new, {counts['updated']} updated, "
-          f"{counts['odds']} new odds rows, {teams} teams.")
+          f"{counts['odds']} new odds rows, {teams} teams; {starters} starting quarterbacks.")
 
 
 if __name__ == "__main__":

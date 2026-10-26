@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "cbb/macros.html" import conference_filter %}
+{% block title %}Team ratings | College basketball probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Team ratings</h1>
+  {% if rows %}<p class="lede">Points per game each Division I team scores and stops compared with an average one, as of {{ as_of }}.</p>
+  <details class="explain"><summary>How these work</summary>
+    <p>Fitted to the last two seasons of games, with recent ones counting much more and last season's less again, because rosters turn over quickly. Schools outside Division I share one rating. Overall is offense plus defense: the expected margin against an average Division I team on a neutral court. Home court is worth about {{ home_adv }} points. Before a season starts, these are last season's teams, carried over.</p>
+  </details>{% endif %}
+</div>
+{% if rows %}
+{{ conference_filter(conferences, conference, base ~ '/cbb/ratings/') }}
+<div class="table-wrap">
+  <table class="ratings">
+    <thead><tr><th scope="col" class="rank">Rank</th><th scope="col">Team</th><th scope="col" class="wide-only">Conference</th><th scope="col" class="num">Offense</th><th scope="col" class="num">Defense</th><th scope="col" class="num">Overall</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr><td class="rank">{{ r.rank }}</td><th scope="row">{{ cbb_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
+        <td class="wide-only muted">{{ r.conference or '' }}</td>
+        <td class="num {{ r.o.cls }}">{{ r.o.text }}</td><td class="num {{ r.d.cls }}">{{ r.d.text }}</td>
+        <td class="num {{ r.all.cls }}"><strong>{{ r.all.text }}</strong></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<section class="empty"><h2>No ratings yet</h2><p>Run <code>python -m cbb.import_cbb</code> first.</p></section>
+{% endif %}
+{% endblock %}

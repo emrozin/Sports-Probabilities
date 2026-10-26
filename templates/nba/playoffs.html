@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Playoff odds | NBA probabilities{% endblock %}
+{% macro pct_cell(c, extra='') %}<td class="num odds-cell {{ extra }}" style="--strength: {{ c.value }}">{{ c.text }}</td>{% endmacro %}
+{% block content %}
+<div class="intro">
+  <h1>Playoff odds{% if season %}: {{ season }}{% endif %}</h1>
+  {% if conferences %}
+  <p class="lede">Each team's chances, from the rest of the season played out {{ simulations }} times. Updated {{ as_of }}.</p>
+  <details class="explain">
+    <summary>How this works</summary>
+    <p>Every remaining game gets a random result from the model: the expected margin from each team's players and their expected minutes (players on the injury report are left out until their expected return date), plus the usual game-to-game spread. Each simulated season also shifts every team's strength by a random amount (typically about {{ rating_sd }} points per game), because ratings are estimates and rosters change through the season.</p>
+    <p>Standings are worked out with head-to-head record and conference record for ties. Then the play-in (7th v 8th for the 7th seed; the loser plays the winner of 9th v 10th for the 8th) and four best-of-seven rounds, the better seed at home in games 1, 2, 5 and 7. "Top 6" means straight into the playoffs; "Playoffs" includes getting there through the play-in. A dash means it didn't happen in any simulation; that's not the same as being eliminated.</p>
+  </details>
+  {% endif %}
+</div>
+{% if conferences %}
+  {% for c in conferences %}
+  <section class="odds-conference">
+    <h2>{{ c.label }}</h2>
+    <div class="table-wrap">
+      <table class="league odds-table">
+        <thead><tr><th scope="col">Team</th><th scope="col" class="num">Record</th>
+          <th scope="col" class="num wide-only"><abbr title="Average final regular-season wins in the simulations">Wins</abbr></th>
+          <th scope="col" class="num wide-only">Top 6</th><th scope="col" class="num">Playoffs</th>
+          {% if before_as_of %}<th scope="col" class="num wide-only"><abbr title="Change in playoff chance since {{ before_as_of }}">Week</abbr></th>{% endif %}
+          <th scope="col" class="num wide-only">Top seed</th><th scope="col" class="num wide-only">Conf. finals</th><th scope="col" class="num">Finals</th><th scope="col" class="num">Title</th></tr></thead>
+        <tbody>
+          {% for r in c.rows %}
+          <tr><th scope="row">{{ nba_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
+            <td class="num">{{ r.record }}</td><td class="num wide-only">{{ r.wins }}</td>
+            {{ pct_cell(r.top_six, 'wide-only') }}{{ pct_cell(r.playoffs, 'odds-main') }}
+            {% if before_as_of %}<td class="num wide-only change change-{{ r.change.dir if r.change else '' }}">{{ r.change.text if r.change else '' }}</td>{% endif %}
+            {{ pct_cell(r.top_seed, 'wide-only') }}{{ pct_cell(r.conference_finals, 'wide-only') }}{{ pct_cell(r.finals) }}{{ pct_cell(r.champion) }}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+  <p class="note">Odds are saved to a public file on every update, so their history can be checked too.</p>
+{% else %}
+  <section class="empty"><h2>No playoff odds yet</h2><p>Run <code>python -m nba.season</code> to simulate the rest of the season.</p></section>
+{% endif %}
+{% endblock %}

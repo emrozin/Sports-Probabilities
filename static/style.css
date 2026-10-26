@@ -899,7 +899,9 @@ a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px soli
 .chart-unit { margin: 0.6rem 0 0; font-size: 0.82rem; color: var(--muted); }
 
 /* Columns: one per game */
-.cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), 1fr); gap: 3px; align-items: end; }
+.cols { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 3px; align-items: end; }
+.chart-bars.dense .cols { gap: 1px; }
+.chart-bars.dense .cols-x { display: none; }
 .col { position: relative; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
 .col-bar { width: min(100%, 1.6rem); border-radius: 4px 4px 0 0; }
 .col-W { background: var(--home); }
@@ -986,3 +988,67 @@ a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px soli
 }
 .filter-chips a:hover { color: var(--ink); }
 .filter-chips a[aria-current="page"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.standings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr)); gap: 0 2.5rem; }
+.standings-grid .league th[scope="row"] { white-space: nowrap; }
+.ratings td.qb-cell { white-space: nowrap; }
+@media (max-width: 40rem) {
+  .site-brand { flex-wrap: wrap; }
+  .site-header .sport-tabs { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .site-header .sport-tabs::-webkit-scrollbar { display: none; }
+}
+
+/* ---------- Track record chart ---------- */
+.chart-record { margin-bottom: 2rem; max-width: 52rem; }
+.chart-legend { display: flex; gap: 1.25rem; margin: -0.35rem 0 0.75rem; font-size: 0.85rem; color: var(--muted); }
+.chart-legend span::before { content: ""; display: inline-block; width: 1.1rem; height: 0; margin-right: 0.4rem; vertical-align: middle; }
+.legend-model::before { border-top: 3px solid var(--accent); }
+.legend-bench::before { border-top: 2px dashed var(--muted); }
+.chart-record .path-model { stroke: var(--accent); }
+.chart-record .path-bench { stroke: var(--muted); stroke-dasharray: 4 4; stroke-width: 2; }
+.chart-record .pt-model { background: var(--accent); }
+
+/* ---------------------------------------------------------------- NBA */
+.card-out { margin: 0; font-size: 0.82rem; color: var(--muted); line-height: 1.4; }
+.card-out .out-label { font-weight: 600; color: var(--ink); margin-right: 0.25rem; }
+.card-out .out-team { font-weight: 600; font-size: 0.75rem; letter-spacing: 0.02em; }
+.matches.single { max-width: 34rem; }
+.game-section { margin-top: 2rem; }
+.lineup-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 1.5rem 2.5rem; }
+.lineup h3 { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 0.5rem; font-size: 1.05rem; }
+.lineup-table td.num, .lineup-table th.num { white-space: nowrap; }
+.lineup-table .proj { font-size: 0.78rem; }
+.lineup-table tr.is-out th, .lineup-table tr.is-out td { color: var(--muted); }
+.lineup-table tr.is-out th { text-decoration: line-through; text-decoration-color: var(--line); }
+.out-list { font-size: 0.85rem; margin: 0.6rem 0 0; line-height: 1.5; }
+.small { font-size: 0.82rem; }
+.nfl-standings .rank { display: inline-block; min-width: 1.4rem; color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.nfl-standings tr.cut-line td, .nfl-standings tr.cut-line th { border-bottom: 2px solid var(--muted); }
+
+/* ---------------------------------------------------------------- Today and Betting */
+.today-section { margin-top: 2rem; }
+.today-section h2 a { color: inherit; }
+.today-table tr.is-finished th a, .today-table tr.is-finished td { color: var(--muted); }
+.block { display: block; }
+.verdict-box { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--surface); border-radius: 10px; padding: 1rem 1.25rem; margin: 1.5rem 0; }
+.verdict-box.verdict-losing { border-left-color: #b4433a; }
+.verdict-box h2 { margin-top: 0; font-size: 1.1rem; }
+.verdict-list { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+.verdict-list li { margin: 0.2rem 0; }
+.bankroll-form { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: end; margin: 0.5rem 0 1rem; }
+.bankroll-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; color: var(--muted); }
+.bankroll-form input, .bankroll-form select { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); width: 9rem; }
+.bankroll-form button { font: inherit; padding: 0.4rem 0.9rem; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: var(--surface); cursor: pointer; }
+.bets-table tr.bet-losing td:last-child strong, .bets-table tr.bet-untested td:last-child strong, .bets-table tr.bet-unclear td:last-child strong { color: var(--muted); }
+.bad { color: #b4433a; }
+.responsible { margin-top: 1rem; }
+.site-footer .updated { color: var(--muted); font-size: 0.82rem; }
+
+/* Betting page: what was tried */
+.bets-table tr.group-row th { padding-top: 1rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); }
+.bets-table tr.kept-row th[scope="row"] { font-weight: 600; }
+.bets-table tr.muted td, .bets-table tr.muted th { color: var(--muted); }
+.exp-table th[scope="row"] { white-space: normal; font-weight: 500; min-width: 14rem; }
+.exp-table th[scope="row"] .block { font-weight: 400; }
+@media (max-width: 600px) { .exp-table th[scope="row"] { min-width: 0; } }
+.exp-table tr.kept-row th[scope="row"] { font-weight: 650; }
+.tag-kept { border-color: var(--accent); color: var(--accent); white-space: nowrap; }

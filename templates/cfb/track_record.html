@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "cfb/macros.html" import game_card, scorecard %}
+{% from "charts.html" import record_line %}
 {% block title %}Track record | College football probabilities{% endblock %}
 {% block content %}
 <div class="intro">
@@ -9,6 +10,7 @@
 {% if weeks %}
   <h2>So far</h2>
   {{ scorecard(overall) }}
+  {% if record_chart %}{{ record_line(record_chart, 'The record so far, week by week') }}{% endif %}
   {% for w in weeks %}
   <section class="day"><h2>{{ w.label }}</h2>{{ scorecard(w.summary) }}<ul class="matches">{% for g in w.games %}{{ game_card(g) }}{% endfor %}</ul></section>
   {% endfor %}

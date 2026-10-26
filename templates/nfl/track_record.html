@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "nfl/macros.html" import game_row %}
+{% from "charts.html" import record_line %}
 {% block title %}Track record | NFL probabilities{% endblock %}
 
 {% block content %}
@@ -38,7 +39,8 @@
       <thead><tr><th scope="col">Week</th><th scope="col" class="num">Games</th><th scope="col" class="num">Model</th>
                  <th scope="col" class="num">Market</th><th scope="col" class="num">Favorite won</th></tr></thead>
       <tbody>
-        {% for w in weeks %}
+        {% if record_chart %}{{ record_line(record_chart, 'The record so far, week by week') }}{% endif %}
+  {% for w in weeks %}
         <tr>
           <th scope="row">{{ w.label }}</th>
           <td class="num">{{ w.scores.games }}</td>

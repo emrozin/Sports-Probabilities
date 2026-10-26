@@ -39,3 +39,18 @@ def test_line_chart_places_points_around_zero():
     assert chart["points"][0]["y"] == 50 and chart["points"][1]["y"] < 50 < chart["points"][2]["y"]
     assert line_chart([{"label": "Start", "value": 1.0, "tip": ""}]) is None
     assert chance_bars([{"label": "1", "chance": 0.634, "outcome": "W", "tip": ""}])[0]["height"] == 63.4
+
+
+def test_record_chart_keeps_a_running_typical_probability():
+    import pytest
+    from charts import record_chart
+    weeks = [{"label": "Week 1", "model": [0.8, 0.5], "benchmark": [0.6, 0.6]},
+             {"label": "Week 2", "model": [], "benchmark": []},                 # skipped
+             {"label": "Week 3", "model": [0.25], "benchmark": [0.5]}]
+    chart = record_chart(weeks, "the betting market")
+    assert [p["label"] for p in chart["points"]] == ["Week 1", "Week 3"]
+    assert chart["points"][0]["model"] == pytest.approx(100 * (0.8 * 0.5) ** 0.5)
+    assert chart["last"]["model"] == pytest.approx(100 * (0.8 * 0.5 * 0.25) ** (1 / 3))
+    assert chart["last"]["games"] == 3 and chart["model_path"].startswith("M 0.0 ")
+    assert all(0 <= t["y"] <= 100 for t in chart["ticks"])
+    assert record_chart(weeks[:1], "x") is None                                # one week isn't a line

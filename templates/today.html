@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "nfl/macros.html" import props_table %}
+{% block title %}Today | Sports probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Today</h1>
+  <p class="lede">{{ date }}: every game in every sport, the model's pick and its chance, next to the betting market's.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>"Model" is the model's chance for its favorite (the pick shown); "Market" is the betting market's chance for the same result, with the bookmaker's margin taken out (Premier League: the average bookmaker; NFL: nflverse's moneyline; NBA and college: DraftKings via ESPN). After a game, the pick turns green or red. "Biggest disagreements" are the games where model and market differ most; on past seasons the market has usually been the one that's right, so read them as "the model sees it differently", not as tips.</p>
+  </details>
+</div>
+{% if gaps %}
+<section class="today-section">
+  <h2>Biggest disagreements with the market</h2>
+  <div class="table-wrap">
+    <table class="league today-table">
+      <thead><tr><th scope="col">Game</th><th scope="col" class="wide-only">Sport</th><th scope="col">Model's pick</th><th scope="col" class="num">Model</th><th scope="col" class="num">Market</th><th scope="col" class="num">Gap</th></tr></thead>
+      <tbody>{% for g in gaps %}<tr><th scope="row"><a href="{{ g.url }}">{{ g.matchup }}</a> <span class="muted small">{{ g.time }}</span></th><td class="wide-only muted">{{ g.sport }}</td><td>{{ g.pick }}</td><td class="num"><strong>{{ g.model }}</strong></td><td class="num">{{ g.market }}</td><td class="num">{{ g.gap_text }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% if bets %}
+<section class="today-section">
+  <h2>Bets the rule would make today</h2>
+  <p class="section-note">Where the model's chance times the price gives an expected return of 3% or more. On every sport with past prices, betting these lost money, so the recommended stake is $0 unless a sport's record says otherwise: see <a href="{{ base }}/betting/">Betting</a>.</p>
+  <div class="table-wrap">
+    <table class="league today-table">
+      <thead><tr><th scope="col">Game</th><th scope="col">Bet</th><th scope="col" class="num">Price</th><th scope="col" class="num">Edge</th><th scope="col" class="num">Recommended</th></tr></thead>
+      <tbody>{% for b in bets %}<tr><th scope="row"><a href="{{ b.url }}">{{ b.matchup }}</a> <span class="muted small">{{ b.sport }}, {{ b.time }}</span></th><td>{{ b.pick }}</td><td class="num">{{ b.price }}</td><td class="num">{{ b.edge }}</td><td class="num"><strong>{{ b.recommended }}</strong></td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% if props %}
+<section class="today-section">
+  <h2>Today's likeliest player props</h2>
+  {{ props_table(props, show_game=True) }}
+</section>
+{% endif %}
+{% if groups %}
+  {% for grp in groups %}
+  <section class="today-section">
+    <h2><a href="{{ grp.url }}">{{ grp.sport }}</a> <span class="muted small">{{ grp.rows|length }} game{{ 's' if grp.rows|length != 1 }}</span></h2>
+    <div class="table-wrap">
+      <table class="league today-table">
+        <thead><tr><th scope="col">Game</th><th scope="col" class="num">Time / score</th><th scope="col">Model's pick</th><th scope="col" class="num">Model</th><th scope="col" class="num">Market</th></tr></thead>
+        <tbody>{% for r in grp.rows %}<tr{% if r.finished %} class="is-finished"{% endif %}>
+          <th scope="row"><a href="{{ r.url }}">{{ r.matchup }}</a></th>
+          <td class="num">{% if r.finished %}<strong>{{ r.score }}</strong>{% elif r.started %}Live{% else %}{{ r.time }}{% endif %}</td>
+          <td>{% if r.pick %}<span class="{% if r.pick_won is defined %}{{ 'prop-hit' if r.pick_won else 'prop-miss' }}{% endif %}">{{ r.pick }}</span>{% else %}<span class="muted">No prediction</span>{% endif %}</td>
+          <td class="num">{{ r.model or '–' }}</td><td class="num muted">{{ r.market or '–' }}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+{% else %}
+  <section class="empty"><h2>No games today</h2><p>Nothing on the schedule in any sport today, or the schedules haven't been updated: run <code>python update.py</code>.</p></section>
+{% endif %}
+{% endblock %}

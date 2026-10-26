@@ -106,14 +106,28 @@ def load_snaps(conn) -> dict:
 
 
 def load_injuries(conn) -> dict:
-    """{(season, week, team): {player id: status}} from the weekly injury reports; empty if not imported."""
+    """{(season, week, team): {player id: status}} from the weekly injury reports, plus players on
+    injured reserve or another reserve list (or released) on that week's roster, as 'Out': they
+    aren't on the injury report. The latest week's roster also counts for the week after it, in case
+    the next roster isn't out yet. Empty if neither has been imported."""
+    reports: dict = defaultdict(dict)
     try:
         df = pd.read_sql("SELECT season, week, team, player_id, status FROM nfl_injuries", conn)
+        for r in df.itertuples():
+            reports[(r.season, r.week, r.team)][r.player_id] = r.status
     except Exception:
-        return {}
-    reports: dict = defaultdict(dict)
-    for r in df.itertuples():
-        reports[(r.season, r.week, r.team)][r.player_id] = r.status
+        pass
+    try:
+        from nfl.quarterbacks import OFF_ROSTER
+        off = pd.read_sql(f"SELECT season, week, team, player_id FROM nfl_rosters WHERE status IN "
+                          f"({', '.join('?' * len(OFF_ROSTER))})", conn, params=sorted(OFF_ROSTER))
+    except Exception:
+        off = pd.DataFrame(columns=["season", "week", "team", "player_id"])
+    if not off.empty:
+        latest = off[off["season"] == off["season"].max()]
+        latest = latest[latest["week"] == latest["week"].max()]
+        for r in pd.concat([off, latest.assign(week=latest["week"] + 1)]).itertuples():
+            reports[(r.season, r.week, r.team)].setdefault(r.player_id, "Out")
     return dict(reports)
 
 

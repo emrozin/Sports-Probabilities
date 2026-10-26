@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "nba/macros.html" import game_card %}
+{% from "nfl/macros.html" import props_table %}
+{% block title %}{{ g.away }} at {{ g.home }} | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow"><a href="{{ base }}/nba/">{{ date }}</a></p>
+  <h1>{{ g.away }} {{ 'vs' if g.neutral else 'at' }} {{ g.home }}</h1>
+</div>
+<ul class="matches single">{{ game_card(g) }}</ul>
+{% if props %}
+<section class="game-section">
+  <h2>Likeliest player props</h2>
+  <p class="section-note">The props the model thinks are likeliest to hit in this game, one per player (points from 15, rebounds from 8, assists from 5, threes from 2). Likely to hit isn't the same as a good bet: these aren't compared with the sportsbook's price.</p>
+  {{ props_table(props) }}
+</section>
+{% endif %}
+<section class="game-section lineups">
+  <h2>{% if finished %}Box score{% if sides[0].rows and sides[0].rows[0].proj %} and projections{% endif %}{% else %}Expected lineups{% endif %}</h2>
+  {% if not finished %}<p class="section-note">Each team's available players with their expected minutes and the model's rating (points per game his team gains with him on the floor for a whole game, against an average player), and the projections. Players ruled out are listed below each team.</p>{% endif %}
+  <div class="lineup-grid">
+  {% for s in sides %}
+    <div class="lineup teamed" style="{{ nba_team_colors(s.team) }}">
+      <h3>{{ nba_chip(s.team) }}<a class="team-link" href="{{ nba_team_url(s.team) }}">{{ s.team }}</a></h3>
+      <div class="table-wrap">
+      <table class="league lineup-table">
+        <thead><tr><th scope="col">Player</th><th scope="col" class="num">Min</th>{% if not finished %}<th scope="col" class="num wide-only">Rating</th>{% endif %}
+          <th scope="col" class="num">Pts</th><th scope="col" class="num">Reb</th><th scope="col" class="num">Ast</th><th scope="col" class="num">3PM</th></tr></thead>
+        <tbody>
+        {% for r in s.rows %}
+          <tr><th scope="row">{{ r.name }}</th><td class="num">{{ r.minutes }}</td>{% if not finished %}<td class="num wide-only muted">{{ r.rating }}</td>{% endif %}
+            {% for st in ['points', 'rebounds', 'assists', 'threes'] %}
+            <td class="num">{% if finished %}<strong>{{ r.stats[st] }}</strong>{% if r.proj %}<span class="muted proj"> {{ r.proj[st] }}</span>{% endif %}{% elif r.proj %}{{ r.proj[st] }}{% else %}–{% endif %}</td>
+            {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% if s.out %}<p class="out-list"><strong>Out:</strong> {% for o in s.out %}{{ o.name }} <span class="muted">({{ o.status }}{% if o.comment %}, {{ o.comment }}{% endif %}{% if o.back %}; expected back {{ o.back }}{% endif %})</span>{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  {% if finished and sides[0].rows and sides[0].rows[0].proj %}<p class="note">Bold: what happened; grey: the projection saved before tip-off.</p>{% endif %}
+</section>
+{% endblock %}

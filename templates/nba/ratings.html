@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Ratings | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Team and player ratings</h1>
+  {% if teams %}
+  <p class="lede">The model's current ratings, {{ as_of }}: points per game better (+) or worse (−) than average.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>A player's rating is how many points per game his team gains with him on the floor for a whole game, against an average player, after allowing for everyone else on both teams, from the last three seasons with recent games counting most. A team's rating adds up its players' ratings weighted by their expected minutes, plus a smaller team term (coaching, system, fit). "Healthy" uses everyone's usual minutes; "Now" leaves out the players the injury report rules out. Home court is worth {{ home_adv }} points.</p>
+    <p>"Impact" is a player's rating times his share of a game on the floor (his usual minutes out of 48): what he's worth to his team per game. Ratings for players with few minutes are pulled toward average, so they're less certain.</p>
+  </details>
+  {% endif %}
+</div>
+{% if teams %}
+<section>
+  <h2>Teams</h2>
+  <div class="table-wrap">
+    <table class="league ratings-table">
+      <thead><tr><th scope="col" class="num">#</th><th scope="col">Team</th><th scope="col" class="wide-only">Conf.</th><th scope="col" class="num">Healthy</th><th scope="col" class="num">Now</th><th scope="col" class="wide-only">Out</th></tr></thead>
+      <tbody>{% for r in teams %}<tr><td class="num">{{ r.rank }}</td><th scope="row">{{ nba_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th><td class="wide-only muted">{{ r.conference }}</td>
+        <td class="num {{ r.healthy.cls }}"><strong>{{ r.healthy.text }}</strong></td><td class="num {{ r.now.cls }}">{{ r.now.text }}</td><td class="wide-only muted small">{{ r.out }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+<section>
+  <h2>Top 50 players by impact</h2>
+  <div class="table-wrap">
+    <table class="league ratings-table">
+      <thead><tr><th scope="col" class="num">#</th><th scope="col">Player</th><th scope="col" class="wide-only">Team</th><th scope="col" class="num">Rating</th><th scope="col" class="num">Usual min</th><th scope="col" class="num">Impact</th></tr></thead>
+      <tbody>{% for p in players %}<tr><td class="num">{{ p.rank }}</td><th scope="row">{{ p.name }}</th><td class="wide-only">{{ nba_chip(p.team) }}<a class="team-link" href="{{ p.url }}">{{ nba_nickname(p.team) }}</a></td>
+        <td class="num {{ p.rating.cls }}">{{ p.rating.text }}</td><td class="num">{{ p.minutes }}</td><td class="num {{ p.impact.cls }}"><strong>{{ p.impact.text }}</strong></td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="empty"><h2>No ratings yet</h2><p>Run <code>python -m nba.import_nba</code> first.</p></section>
+{% endif %}
+{% endblock %}

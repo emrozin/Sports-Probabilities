@@ -88,3 +88,15 @@ def league_db(project):
     games, _ = simulate_league()
     build_database(project / "data" / "sports.db", games)
     return project / "data" / "sports.db"
+
+
+@pytest.fixture(autouse=True)
+def never_the_real_database(tmp_path, monkeypatch):
+    """Every website module reads its database from a fixed path in the project folder. Point them all
+    at an empty temporary one, so no test ever reads your real data (tests that need data set their own)."""
+    import importlib
+    missing = tmp_path / "no-database" / "sports.db"
+    for name in ("app", "nfl.site", "cfb.site", "cbb.site", "nba.site", "overview"):
+        module = importlib.import_module(name)
+        monkeypatch.setattr(module, "DB_PATH", missing)
+        module._cache.clear()

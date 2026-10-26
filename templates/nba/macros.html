@@ -1,0 +1,63 @@
+{# NBA game card: away team first, like "Celtics at Knicks", each in its own colors, with the model's
+   chances next to the betting market's (when ESPN had a line) and who's out. #}
+{% from "nfl/macros.html" import bar, props_table %}
+
+{% macro team_link(team, current=None) -%}
+  {% if team == current %}<span>{{ nba_nickname(team) }}</span>{% else %}<a class="team-link" href="{{ nba_team_url(team) }}" title="{{ team }}">{{ nba_nickname(team) }}</a>{% endif %}
+{%- endmacro %}
+
+{% macro game_card(g, current_team=None) %}
+  {% set fav = ('home' if g.model.home >= g.model.away else 'away') if g.model else none %}
+  <li class="match card teamed{% if g.finished %} is-finished{% endif %}" style="{{ nba_colors(g.home, g.away) }}">
+    <div class="card-top">
+      <span class="card-when">
+        {% if g.outcome %}<span class="badge badge-{{ g.outcome }}">{{ g.outcome }}</span>{% endif %}
+        {{ g.when }}
+      </span>
+      {% if g.edge %}<span class="edge" title="The model gives the {{ g.edge.team }} a {{ g.edge.points }}-point higher chance of winning than the betting market does">Model {{ g.edge.points }} pts higher on {{ g.edge.team }}</span>{% endif %}
+    </div>
+    <div class="sides">
+      {% for side in ['away', 'home'] %}
+      {% set state = ('winner' if g.result == side else 'loser') if g.finished else ('fav' if fav == side else 'dog') %}
+      <div class="side side-{{ side }} {{ state }}">
+        <span class="chip" aria-hidden="true"></span>
+        <span class="side-name">{% if side == 'home' %}<span class="at">{{ 'vs' if g.neutral else 'at' }}</span> {% endif %}{{ team_link(g[side], current_team) }}<span class="side-full">{{ g[side].rsplit(' ', 1)[0] if nba_nickname(g[side]) != g[side] else '' }}</span></span>
+        <span class="side-number">{% if g.finished %}{{ g[side ~ '_score'] }}{% elif g.model %}{{ g.model[side] }}<small>%</small>{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% if g.model %}
+    <div class="card-bars">
+      <span class="bar-name">Model</span>{{ bar(g.model, 'card', g.result if g.finished else None, g.away, g.home) }}
+      {% if g.market %}<span class="bar-name">Market</span>{{ bar(g.market, 'card-market', g.result if g.finished else None, g.away, g.home) }}{% endif %}
+    </div>
+    {% endif %}
+    {% if g.finished %}
+      <p class="card-note">{% if g.model %}Model gave the {{ nba_nickname(g[g.result]) }} <strong>{{ g.model_actual }}%</strong>{% if g.market_actual is defined %}, market {{ g.market_actual }}%{% endif %}.{% else %}No model prediction for this game.{% endif %}</p>
+    {% elif g.model %}
+      <table class="card-lines">
+        <thead><tr><td></td><th scope="col">Win</th><th scope="col">Spread</th><th scope="col">Total</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Model</th><td>{{ g.model[fav] }}% {{ nba_nickname(g[fav]) }}</td><td>{{ g.model_line or '–' }}</td><td>{{ g.model_total or '–' }}</td></tr>
+          <tr class="muted"><th scope="row">Market</th><td>{% if g.market %}{{ g.market[fav] }}% {{ nba_nickname(g[fav]) }}{% else %}–{% endif %}</td><td>{{ g.market_line or '–' }}</td><td>{{ g.market_total or '–' }}</td></tr>
+        </tbody>
+      </table>
+      {% if g.out and (g.out.away or g.out.home) %}
+      <p class="card-out"><span class="out-label">Out:</span>
+        {% for side in ['away', 'home'] %}{% if g.out[side] %}<span class="out-team">{{ nba_abbr(g[side]) }}</span> {{ g.out[side]|join(', ') }}{% if side == 'away' and g.out.home %}; {% endif %}{% endif %}{% endfor %}
+      </p>
+      {% endif %}
+    {% endif %}
+    <p class="card-foot">{% if g.finished and g.source %}<span class="source">{{ g.source }}</span>{% endif %}<a href="{{ g.url }}">Game details</a></p>
+  </li>
+{% endmacro %}
+
+{% macro scorecard(s) %}
+{% if s %}
+<div class="scorecard">
+  <div class="stat"><p class="stat-value">{{ s.model_typical }}%</p><p class="stat-label">Model's typical probability for the actual winner</p></div>
+  {% if s.market_typical %}<div class="stat"><p class="stat-value stat-muted">{{ s.market_typical }}%</p><p class="stat-label">Betting market's{% if s.market_games != s.games %} ({{ s.market_games }} games with a line; model {{ s.model_typical_same }}% on those){% endif %}</p></div>{% endif %}
+  <div class="stat"><p class="stat-value stat-muted">{{ s.model_favorite_won }} of {{ s.games }}</p><p class="stat-label">Games won by the model's favorite</p></div>
+</div>
+{% endif %}
+{% endmacro %}

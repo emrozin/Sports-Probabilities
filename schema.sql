@@ -195,6 +195,19 @@ CREATE TABLE IF NOT EXISTS nfl_player_projections (
 );
 
 -- NFL weekly injury reports from nflverse (nfl/import_nfl_stats.py): each listed player's game status.
+-- Weekly NFL rosters from nflverse-data (nfl/import_nfl_stats.py): every player's status each week.
+CREATE TABLE IF NOT EXISTS nfl_rosters (
+    season     INTEGER NOT NULL,
+    week       INTEGER NOT NULL,
+    team       TEXT NOT NULL,
+    player_id  TEXT NOT NULL,              -- nflverse's (GSIS) player id
+    name       TEXT,
+    position   TEXT,
+    status     TEXT,                       -- 'ACT' active, 'RES' injured reserve and other reserve lists, 'INA' inactive,
+                                           -- 'DEV' practice squad, 'CUT' released, ...
+    PRIMARY KEY (season, week, team, player_id)
+);
+
 CREATE TABLE IF NOT EXISTS nfl_injuries (
     season     INTEGER NOT NULL,
     week       INTEGER NOT NULL,
@@ -249,4 +262,172 @@ CREATE TABLE IF NOT EXISTS cfb_game_info (
     notes            TEXT,                     -- e.g. bowl names
     spread_line      REAL,                     -- consensus closing spread, the HOME team's handicap
     total_line       REAL                      -- consensus closing total
+);
+
+-- College football starting quarterbacks (cfb/import_cfb.py), from cfbfastR-data's play-by-play player
+-- stats (2014 on): the player with the most dropbacks for each team in each game.
+CREATE TABLE IF NOT EXISTS cfb_starters (
+    game_id   INTEGER NOT NULL REFERENCES games(id),
+    side      TEXT NOT NULL CHECK (side IN ('home', 'away')),
+    qb_id     TEXT NOT NULL,        -- ESPN's player id (follows a player who transfers)
+    qb_name   TEXT NOT NULL,
+    attempts  INTEGER,              -- his passes in the game (including sacks)
+    PRIMARY KEY (game_id, side)
+);
+
+-- Men's college basketball game details from sportsdataverse-data (cbb/import_cbb.py).
+-- season is the starting year: 2025 means the 2025-26 season.
+CREATE TABLE IF NOT EXISTS cbb_game_info (
+    game_id          INTEGER PRIMARY KEY REFERENCES games(id),
+    source_game_id   TEXT NOT NULL UNIQUE,     -- ESPN's game id
+    season_type      TEXT NOT NULL,            -- 'regular' or 'postseason'
+    neutral_site     INTEGER NOT NULL CHECK (neutral_site IN (0, 1)),
+    conference_game  INTEGER,
+    home_conference  TEXT, away_conference TEXT, -- NULL for schools outside Division I
+    notes            TEXT                      -- e.g. "NCAA Men's Basketball Championship - Final Four"
+);
+
+-- Team colors for college basketball (from the same source).
+CREATE TABLE IF NOT EXISTS cbb_teams (
+    name       TEXT PRIMARY KEY,
+    color      TEXT,
+    alt_color  TEXT
+);
+
+-- College football conference title odds (cfb/conference.py), one row per team per date.
+CREATE TABLE IF NOT EXISTS cfb_conference_odds (
+    season     INTEGER NOT NULL,
+    as_of      TEXT NOT NULL,              -- the date the odds were made (games before it are known)
+    conference TEXT NOT NULL,
+    team       TEXT NOT NULL,
+    conf_wins  REAL NOT NULL,              -- average conference wins
+    conf_games INTEGER NOT NULL,
+    wins       REAL NOT NULL,              -- average regular-season wins
+    games      INTEGER NOT NULL,
+    title_game REAL NOT NULL,              -- chance of reaching the conference title game
+    champion   REAL NOT NULL,              -- chance of winning it
+    PRIMARY KEY (season, as_of, team)
+);
+
+-- NBA game details from sportsdataverse-data's ESPN files (nba/import_nba.py), one row per game.
+CREATE TABLE IF NOT EXISTS nba_game_info (
+    game_id        INTEGER PRIMARY KEY REFERENCES games(id),
+    source_game_id TEXT UNIQUE NOT NULL,       -- ESPN's game id
+    season_type    TEXT NOT NULL,              -- 'regular', 'cup_final' (doesn't count in the standings), 'playin', 'playoffs'
+    neutral_site   INTEGER NOT NULL DEFAULT 0,
+    notes          TEXT                        -- e.g. 'NBA Cup - Group Play', 'East 1st Round - Game 3'
+);
+
+-- The 30 NBA franchises under their current names (ESPN ids), with conference, division and colors.
+CREATE TABLE IF NOT EXISTS nba_teams (
+    espn_id      INTEGER PRIMARY KEY,
+    name         TEXT UNIQUE NOT NULL,
+    abbreviation TEXT,
+    conference   TEXT,
+    division     TEXT,
+    color        TEXT,
+    alt_color    TEXT
+);
+
+-- Every player's line in every finished NBA game, including players who didn't play (with the reason).
+CREATE TABLE IF NOT EXISTS nba_player_games (
+    game_id      INTEGER NOT NULL REFERENCES games(id),
+    team         TEXT NOT NULL,
+    player_id    TEXT NOT NULL,                -- ESPN athlete id
+    name         TEXT NOT NULL,
+    position     TEXT,
+    starter      INTEGER NOT NULL DEFAULT 0,
+    minutes      REAL NOT NULL DEFAULT 0,
+    did_not_play INTEGER NOT NULL DEFAULT 0,
+    reason       TEXT,
+    points REAL, rebounds REAL, assists REAL, threes REAL, steals REAL, blocks REAL, turnovers REAL, plus_minus REAL,
+    PRIMARY KEY (game_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS nba_player_games_player ON nba_player_games (player_id);
+
+-- Betting lines from ESPN's scoreboard feed (espn.py): one row per game, the latest seen (the
+-- closing line once final = 1). Moneylines as decimal odds; spread is the home team's line.
+CREATE TABLE IF NOT EXISTS espn_lines (
+    league         TEXT NOT NULL,              -- 'NBA', 'CBB', 'CFB'
+    source_game_id TEXT NOT NULL,              -- ESPN's game id
+    game_id        INTEGER NOT NULL REFERENCES games(id),
+    date           TEXT,
+    provider       TEXT,                       -- the sportsbook ESPN shows, e.g. 'DraftKings'
+    home_ml_open   REAL,
+    away_ml_open   REAL,
+    home_ml        REAL,
+    away_ml        REAL,
+    spread         REAL,
+    total          REAL,
+    final          INTEGER NOT NULL DEFAULT 0, -- 1 once the game has started: these are the closing lines
+    updated_at     TEXT,
+    PRIMARY KEY (league, source_game_id)
+);
+
+-- The NBA's current rosters and injury report from ESPN (nba/live.py), replaced on each update.
+CREATE TABLE IF NOT EXISTS nba_rosters_now (
+    team       TEXT NOT NULL,
+    player_id  TEXT NOT NULL,                  -- ESPN athlete id, as in nba_player_games
+    name       TEXT,
+    position   TEXT,
+    fetched_at TEXT,
+    PRIMARY KEY (team, player_id)
+);
+CREATE TABLE IF NOT EXISTS nba_injuries_now (
+    team        TEXT NOT NULL,
+    player_id   TEXT NOT NULL,
+    name        TEXT,
+    status      TEXT,                          -- 'Out', 'Doubtful', 'Day-To-Day', ...
+    return_date TEXT,                          -- ESPN's expected return date, if given
+    comment     TEXT,
+    updated     TEXT,
+    fetched_at  TEXT,
+    PRIMARY KEY (team, player_id)
+);
+
+-- NBA playoff odds (nba/season.py), one row per team per date.
+CREATE TABLE IF NOT EXISTS nba_season_odds (
+    season            INTEGER NOT NULL,
+    as_of             TEXT NOT NULL,
+    team              TEXT NOT NULL,
+    conference        TEXT,
+    wins              REAL NOT NULL,          -- average regular-season wins
+    top_six           REAL NOT NULL,          -- straight into the playoffs
+    playoffs          REAL NOT NULL,          -- directly or through the play-in
+    top_seed          REAL NOT NULL,
+    conference_finals REAL NOT NULL,
+    finals            REAL NOT NULL,
+    champion          REAL NOT NULL,
+    PRIMARY KEY (season, as_of, team)
+);
+
+-- NBA player projections for upcoming games (nba/predict_players.py), saved before tip-off.
+CREATE TABLE IF NOT EXISTS nba_player_projections (
+    game_id       INTEGER NOT NULL REFERENCES games(id),
+    team          TEXT NOT NULL,
+    player_id     TEXT NOT NULL,
+    name          TEXT,
+    minutes       REAL,
+    points        REAL,
+    rebounds      REAL,
+    assists       REAL,
+    threes        REAL,
+    model_version TEXT,
+    created_at    TEXT,
+    PRIMARY KEY (game_id, player_id)
+);
+
+-- Bets the betting rule suggested (betting.py), logged the first time each was suggested, at that
+-- moment's price, and never changed: one per game.
+CREATE TABLE IF NOT EXISTS bets (
+    league       TEXT NOT NULL,
+    game_id      INTEGER NOT NULL REFERENCES games(id),
+    outcome      TEXT NOT NULL,              -- 'home', 'away' or 'draw'
+    p            REAL NOT NULL,              -- the model's chance
+    market       REAL NOT NULL,              -- the price's chance, bookmaker's margin removed
+    price        REAL NOT NULL,              -- decimal odds
+    edge         REAL NOT NULL,              -- expected return per $1: p x price - 1
+    kelly        REAL NOT NULL,              -- full Kelly stake as a share of the bankroll
+    suggested_at TEXT NOT NULL,
+    PRIMARY KEY (league, game_id)
 );

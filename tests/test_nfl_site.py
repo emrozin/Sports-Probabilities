@@ -190,5 +190,7 @@ def test_update_keeps_going_when_one_sport_fails(monkeypatch, capsys):
     assert exit_info.value.code == 1
     assert ran == ["epl.import_epl", "nfl.import_nfl", "nfl.import_nfl_stats", "nfl.run_backtest",
                    "nfl.predict_upcoming", "nfl.predict_players", "nfl.season",
-                   "cfb.import_cfb", "cfb.run_backtest", "cfb.predict_upcoming"]
+                   "nba.import_nba", "nba.live", "nba.run_backtest", "nba.predict_upcoming", "nba.predict_players", "nba.season",
+                   "cfb.import_cfb", "cfb.run_backtest", "cfb.predict_upcoming", "cfb.conference",
+                   "cbb.import_cbb", "cbb.run_backtest", "cbb.predict_upcoming", "espn", "betting"]
     assert "Premier League: Results, stats and odds" in capsys.readouterr().out

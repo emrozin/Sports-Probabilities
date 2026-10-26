@@ -10,9 +10,16 @@ it kept listing Drew Lock for Seattle for four weeks after Sam Darnold came back
    that game (threw most of the passes) and isn't Out or Doubtful on this week's injury report,
    the last starter is assumed to start again. (A listed usual starter is trusted: that's a
    starter coming back from an injury.)
-3. nfl/qb_overrides.csv: a line "game,team,qb" (e.g. 2026_06_SEA_DEN,SEA,Sam Darnold, or the game
-   as in its page address, 2026-06-sea-den) names the starter for one game and beats everything
-   above. For benchings the data can't see.
+3. Upcoming games: if the quarterback chosen above is ruled out (Out or Doubtful on the injury
+   report, or on injured reserve or another reserve list, or released, on nflverse's weekly
+   roster), the starter is the team's other quarterback on the roster who most recently started
+   for it (then the one who has thrown the most passes for it, then anywhere). Players on injured
+   reserve aren't on the weekly injury report, so the roster is what catches them (Jalen Hurts
+   in October 2026: the schedule kept listing him, and Tanner McKee started).
+4. nfl/qb_overrides.csv: a line "game,team,qb" (e.g. 2026_06_SEA_DEN,SEA,Sam Darnold, or the game
+   as in its page address, 2026-06-sea-den) names the starter for one game still to be played and
+   beats everything above. For benchings the data can't see. Finished games always go by the box
+   score, so a wrong guess there never reaches the ratings.
 """
 
 import csv
@@ -24,6 +31,7 @@ import pandas as pd
 
 OVERRIDES_PATH = Path(__file__).with_name("qb_overrides.csv")
 RULED_OUT = {"Out", "Doubtful"}
+OFF_ROSTER = {"RES", "CUT", "RET", "EXE", "TRD", "TRT"}   # reserve lists, released, retired, traded
 FINISHED_SHARE = 0.5   # threw at least this share of his team's passes: he finished the game
 USUAL_STARTER_GAMES = 8
 SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
@@ -76,6 +84,24 @@ def correct_quarterbacks(conn, games: pd.DataFrame, overrides: dict | None = Non
         for season, week, team, name, status in conn.execute("SELECT season, week, team, name, status FROM nfl_injuries"):
             injuries[(season, week, team, person(name))] = status
 
+    rosters: dict = {}   # (season, team) -> {week: {person: (status, name, position)}}
+    if _table(conn, "nfl_rosters"):
+        for season, week, team, name, position, status in conn.execute(
+                "SELECT season, week, team, name, position, status FROM nfl_rosters WHERE position = 'QB'"):
+            rosters.setdefault((season, team), {}).setdefault(week, {})[person(name)] = (status, name, position)
+
+    def roster_for(season, week, team) -> dict:
+        """The team's quarterbacks that week (or its latest roster before it that season)."""
+        weeks = rosters.get((season, team), {})
+        known = [w for w in weeks if w <= week]
+        return weeks[max(known)] if known else {}
+
+    def ruled_out(season, week, team, qb) -> bool:
+        if injuries.get((season, week, team, person(qb))) in RULED_OUT:
+            return True
+        entry = roster_for(season, week, team).get(person(qb))
+        return entry is not None and entry[0] in OFF_ROSTER
+
     # the schedule's spelling of each team's quarterbacks, so a corrected name matches the listed ones
     spelling = {}
     for side in ("home", "away"):
@@ -93,6 +119,27 @@ def correct_quarterbacks(conn, games: pd.DataFrame, overrides: dict | None = Non
         for r in passers.drop_duplicates(keys).itertuples(index=False):
             key = (r.game_id, r.team)
             box[key] = (spelling.get((r.team, r.person), r.name), r.pass_attempts / totals[key], people[key])
+
+    thrown: dict = {}   # (team or None for anywhere, person) -> passes thrown
+    if not passers.empty:
+        for (team, who), n in passers.groupby(["team", "person"])["pass_attempts"].sum().items():
+            thrown[(team, who)] = n
+            thrown[(None, who)] = thrown.get((None, who), 0) + n
+
+    def replacement(season, week, team, out_qb):
+        """The team's healthy quarterback most likely to start instead of out_qb (None if unknown)."""
+        options = [(key, name) for key, (status, name, _) in roster_for(season, week, team).items()
+                   if status not in OFF_ROSTER and key != person(out_qb)]
+        if not options:
+            return None
+        starts = history.get(team, [])
+
+        def rank(option):
+            key = option[0]
+            last = max((i for i, q in enumerate(starts) if q and person(q) == key), default=-1)
+            return (last, thrown.get((team, key), 0), thrown.get((None, key), 0))
+        key, name = max(options, key=rank)
+        return spelling.get((team, key), name)
 
     source_ids = {}
     if _table(conn, "nfl_game_info"):
@@ -119,7 +166,11 @@ def correct_quarterbacks(conn, games: pd.DataFrame, overrides: dict | None = Non
                 out = injuries.get((g.season, g.week, team, person(previous))) in RULED_OUT
                 if previous and person(qb) not in (person(previous), person(usual)) and finished and not out:
                     qb = previous                     # a stale listing: the last starter is healthy
-            corrected[side][g.id] = overrides.get((source_ids.get(g.id), team), qb)
+            if g.status != "final":
+                if qb is not None and ruled_out(g.season, g.week, team, qb):
+                    qb = replacement(g.season, g.week, team, qb) or qb
+                qb = overrides.get((source_ids.get(g.id), team), qb)
+            corrected[side][g.id] = qb
     for side in ("home", "away"):
         games[f"{side}_qb"] = games["id"].map(corrected[side])
     return games

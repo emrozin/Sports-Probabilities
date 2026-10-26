@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Betting | Sports probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Betting: what the model would bet, and how much</h1>
+  <p class="lede">Bets where the model's chance and the bookmaker's price give a positive expected return, stakes for your bankroll, and the honest record of how this has done.</p>
+</div>
+
+<section class="verdict-box {% if any_winning %}verdict-mixed{% else %}verdict-losing{% endif %}">
+  <h2>Read this first</h2>
+  {% if any_winning %}
+  <p>In at least one sport the rule made money on past seasons beyond what luck explains; stakes are recommended only there.</p>
+  {% else %}
+  <p><strong>On every sport with past prices, betting the model's edges lost money</strong>, even after the improvements tried below. The model's chances are less accurate than the betting market's, and the games where it disagrees most are mostly games where the market is right. So the recommended stake is <strong>$0</strong> for now. The rule's stakes are shown so you can see how sizing works, and every suggestion is logged and settled, so the live record will show if that changes.</p>
+  {% endif %}
+  <ul class="verdict-list">{% for sport, v in verdicts.items() %}<li><strong>{{ sport }}:</strong> {{ v.text }}</li>{% endfor %}</ul>
+</section>
+
+<section class="today-section">
+  <h2>Bets the rule suggests now</h2>
+  <form class="bankroll-form" method="get">
+    <label>Bankroll $ <input type="number" name="bankroll" value="{{ bankroll }}" min="10" step="10"></label>
+    <label>Kelly fraction <select name="fraction">{% for value, label in fractions %}<option value="{{ value }}" {% if value == fraction %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+    <button type="submit">Update stakes</button>
+  </form>
+  {% if suggestions %}
+  <div class="table-wrap">
+    <table class="league bets-table">
+      <thead><tr><th scope="col">Game</th><th scope="col">Bet</th><th scope="col" class="num">Price</th><th scope="col" class="num wide-only">Model</th><th scope="col" class="num wide-only">Market</th><th scope="col" class="num">Edge</th><th scope="col" class="num">Rule's stake</th><th scope="col" class="num">Recommended</th></tr></thead>
+      <tbody>{% for b in suggestions %}<tr class="bet-{{ b.status }}">
+        <th scope="row"><a href="{{ b.url }}">{{ b.matchup }}</a><span class="muted small block">{{ b.sport }}, {{ b.date }}, {{ b.time }}</span></th>
+        <td>{{ b.pick }}</td><td class="num" title="Decimal {{ b.decimal }}">{{ b.price }}</td><td class="num wide-only">{{ b.model }}</td><td class="num wide-only muted">{{ b.market }}</td>
+        <td class="num">{{ b.edge }}</td><td class="num muted">{{ b.rule_stake }}</td><td class="num"><strong>{{ b.recommended }}</strong></td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <p class="note">"Edge" is the expected return of a $1 bet if the model's chance is right. "Rule's stake" is {{ (fraction * 100)|round|int }}% of the full Kelly stake for a ${{ bankroll }} bankroll, at most {{ cap }} of it on one bet. "Recommended" is $0 unless the sport's record shows the rule making money.</p>
+  {% else %}
+  <p class="muted">No game coming up has an edge of {{ min_edge }} or more at the current prices.</p>
+  {% endif %}
+</section>
+
+{% if record %}
+<section class="today-section">
+  <h2>Live record</h2>
+  <div class="scorecard">
+    <div class="stat"><p class="stat-value">{{ record.won }}–{{ record.lost }}{% if record.push %}–{{ record.push }}{% endif %}</p><p class="stat-label">Won–lost of {{ record.settled }} settled bets ({{ record.logged }} logged)</p></div>
+    <div class="stat"><p class="stat-value stat-muted">{{ record.units }}</p><p class="stat-label">Profit in units ($1 on each), {{ record.roi }} per bet</p></div>
+    <div class="stat"><p class="stat-value stat-muted">{{ record.clv }}</p><p class="stat-label">Closing-line value: positive when the price moved toward the model before the game</p></div>
+  </div>
+  <div class="table-wrap">
+    <table class="league bets-table">
+      <thead><tr><th scope="col">Game</th><th scope="col">Bet</th><th scope="col" class="num">Price</th><th scope="col" class="num">Edge</th><th scope="col">Result</th><th scope="col" class="num">Units</th><th scope="col" class="num wide-only">CLV</th></tr></thead>
+      <tbody>{% for r in record.rows %}<tr><th scope="row">{{ r.matchup }}<span class="muted small block">{{ r.sport }}, {{ r.date }}</span></th><td>{{ r.pick }}</td><td class="num">{{ r.price }}</td><td class="num">{{ r.edge }}</td>
+        <td><span class="{{ 'prop-hit' if r.result == 'won' else 'prop-miss' if r.result == 'lost' else 'muted' }}">{{ r.result|capitalize }}</span></td><td class="num">{{ r.profit }}</td><td class="num wide-only muted">{{ r.clv }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <p class="note">Each bet is logged the first time it's suggested, at that moment's price, and never changed: <a href="https://github.com/emrozin/Sports-Probabilities/blob/main/records/bets.csv">records/bets.csv</a>.</p>
+</section>
+{% endif %}
+
+{% if tests %}
+<section class="today-section">
+  <h2>How the rule did on past seasons</h2>
+  <p class="section-note">The same rule, on each sport's held-out seasons: predictions made from earlier games only, at the prices of the time. "95% range" is how far luck alone could have moved the result: if it doesn't include 0, the result isn't luck.</p>
+  <div class="table-wrap">
+    <table class="league bets-table">
+      <thead><tr><th scope="col">Sport</th><th scope="col" class="num">Bets</th><th scope="col" class="num wide-only">Won</th><th scope="col" class="num wide-only">Expected</th><th scope="col" class="num">Actual per bet</th><th scope="col" class="num">95% range</th><th scope="col" class="num">$1,000 at ¼ Kelly</th><th scope="col" class="num wide-only">Worst drop</th><th scope="col" class="num wide-only">CLV</th></tr></thead>
+      <tbody>{% for t in tests %}<tr><th scope="row">{{ t.sport }}<span class="muted small block">{{ t.seasons }}, {{ t.games }} games</span></th>
+        <td class="num">{{ t.bets }}</td><td class="num wide-only">{{ t.won }}</td><td class="num wide-only muted">{{ t.expected }}</td>
+        <td class="num"><strong class="{{ 'bad' if t.losing }}">{{ t.roi }}</strong></td><td class="num">{{ t.range }}</td><td class="num">{{ t.kelly }}</td><td class="num wide-only">{{ t.drawdown }}</td><td class="num wide-only">{{ t.clv }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <h3>Do bigger edges do better?</h3>
+  <p class="section-note">If the model's edges were real, bets with bigger edges would make more. They don't: the biggest "edges" lost the most, because they're the games where the model is most wrong.</p>
+  <div class="table-wrap">
+    <table class="league bets-table">
+      <thead><tr><th scope="col">Sport</th>{% for b in tests[0].buckets %}<th scope="col" class="num">Edge {{ b.edges }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for t in tests %}<tr><th scope="row">{{ t.sport }}</th>{% for b in t.buckets %}<td class="num">{{ b.roi }} <span class="muted small">({{ b.bets }})</span></td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <p class="note">Each cell: actual return per bet (number of bets). "Expected" is what the model thought it would make; "CLV" (closing-line value) is how the price moved before the game, from the average bookmaker's to Pinnacle's closing price for the Premier League: negative means the market moved away from the model.{% for t in tests %}{% if t.assumed_margin %} {{ t.sport }}'s past prices are a consensus with a typical 4.5% bookmaker margin added back, since the margin-free consensus is all that's available.{% endif %}{% endfor %}</p>
+</section>
+{% endif %}
+
+{% if experiments %}
+<section class="today-section">
+  <h2>What we tried to make it better</h2>
+  <p class="section-note">Each change was tried on the earlier seasons first, then checked once on the held-out seasons it never saw. Only betting at the best price helped, and only in the Premier League (the one sport with more than one bookmaker's price); it's what the rule uses now. Nothing turned a loss into a profit.</p>
+  <div class="table-wrap">
+    <table class="league bets-table exp-table">
+      <thead><tr><th scope="col">Change</th><th scope="col" class="num">Bets</th><th scope="col" class="num">Per bet</th><th scope="col" class="num wide-only">95% range</th><th scope="col" class="num wide-only">$1,000 at ¼ Kelly</th></tr></thead>
+      <tbody>{% for e in experiments %}{% if loop.first or e.sport != loop.previtem.sport %}<tr class="group-row"><th scope="rowgroup" colspan="5">{{ e.sport }}</th></tr>{% endif %}
+        <tr class="{{ 'kept-row' if e.kept }}{{ ' muted' if e.in_sample }}"><th scope="row">{{ e.rule }}{% if e.kept %} <span class="tag tag-kept">used now</span>{% endif %}<span class="muted small block">{{ e.seasons }}{% if e.note %}. {{ e.note }}{% endif %}</span></th>
+        <td class="num">{{ e.bets }}</td><td class="num"><strong class="{{ 'bad' if e.losing }}">{{ e.roi }}</strong></td><td class="num wide-only">{{ e.range }}</td><td class="num wide-only">{{ e.kelly }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <p class="note"><strong>Blend</strong> mixes the model's chance with the market's before looking for an edge, weighted by what predicted the earlier seasons best. It backfired: with the chances pulled toward the market, the only edges left were long shots, where the bookmaker's margin is biggest, and those lost. <strong>Tuned</strong> rules looked good on the seasons they were tuned on (the grey rows) and fell apart on new ones, which is what overfitting looks like. The blend's held-out log loss is no better than the market's alone: the models don't know anything the prices don't already include. Better bets need better information, not a cleverer rule.</p>
+</section>
+{% endif %}
+
+<section class="today-section">
+  <h2>How the stakes are worked out</h2>
+  <details class="explain" open><summary>Expected return, Kelly and why only a fraction</summary>
+    <p><strong>Expected return.</strong> A bet at decimal price <em>d</em> (American +150 is 2.50) on a result with chance <em>p</em> returns <em>p &times; d &minus; 1</em> per $1 on average. The rule suggests a bet when that's {{ min_edge }} or more by the model's chances, at most one bet per game.</p>
+    <p><strong>Kelly.</strong> If the chances were exactly right, staking <em>(p &times; d &minus; 1) / (d &minus; 1)</em> of your bankroll grows it fastest over the long run. But the chances are estimates, and full Kelly on overestimated edges loses money fast (see the past seasons above), so the rule uses a fraction of it ({{ (fraction * 100)|round|int }}% here) and never more than {{ cap }} of the bankroll on one bet.</p>
+    <p><strong>Flat stakes.</strong> The live record counts $1 on every bet ("units"), the simplest fair test.</p>
+  </details>
+  <p class="note responsible">This is a statistics project, not betting advice. If you bet, only bet what you can afford to lose. For help with gambling, call or text 1-800-GAMBLER.</p>
+</section>
+{% endblock %}

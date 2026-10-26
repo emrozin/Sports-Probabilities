@@ -148,3 +148,117 @@ def test_upcoming_page_and_conference_filter(cfb_project):
     sec = client.get("/cfb/?conference=SEC").text
     assert 0 < sec.count('class="match card') < 4 or "No upcoming games predicted for the SEC" in sec
     assert client.get("/cfb/team/not-a-team/").status_code == 404
+
+
+def test_starter_is_the_quarterback_with_the_most_dropbacks():
+    plays = pd.DataFrame({
+        "game_id": [1] * 6, "team": ["Michigan"] * 5 + ["Ohio State"], "play_id": [1, 2, 3, 4, 5, 6],
+        "completion_player_id": [99, 10, 10, np.nan, np.nan, 20], "completion_player": ["Trick Play", "Starter", "Starter", None, None, "Other"],
+        "incompletion_player_id": [np.nan, np.nan, np.nan, 10, np.nan, np.nan], "incompletion_player": [None, None, None, "Starter", None, None],
+        "interception_thrown_player_id": [np.nan] * 6, "interception_thrown_player": [None] * 6,
+        "sack_taken_player_id": [np.nan, np.nan, np.nan, np.nan, 10, np.nan], "sack_taken_player": [None, None, None, None, "Starter", None]})
+    starters = import_cfb.starters_from_plays(plays).set_index("team")
+    assert starters.at["Michigan", "qb_name"] == "Starter" and starters.at["Michigan", "attempts"] == 4
+    assert starters.at["Ohio State", "qb_id"] == "20"
+
+
+def test_a_duplicate_game_in_the_source_is_skipped_not_attached_to_another_game(project):
+    schedule = simulated_schedule().head(6)
+    duplicate = schedule.iloc[[5]].assign(game_id=999999999)          # same teams, same day, new id
+    conn = sqlite3.connect(project / "data" / "sports.db")
+    import_cfb.import_games(conn, pd.concat([schedule, duplicate], ignore_index=True))
+    import_cfb.import_games(conn, pd.concat([schedule, duplicate], ignore_index=True))   # and again
+    assert conn.execute("SELECT COUNT(*) FROM games").fetchone()[0] == 6
+    assert conn.execute("SELECT COUNT(*) FROM cfb_game_info").fetchone()[0] == 6
+    assert conn.execute("SELECT COUNT(*) FROM cfb_game_info WHERE source_game_id = '999999999'").fetchone()[0] == 0
+    conn.close()
+
+
+def test_expected_starter_is_the_previous_games_and_new_starters_count_up():
+    from cfb.model import add_expected_starters
+    games = pd.DataFrame({"id": [1, 2, 3], "status": ["final", "final", "scheduled"], "home": ["A", "A", "A"],
+                          "away": ["B", "C", "D"], "home_qb": ["q1", "q2", None], "away_qb": ["b1", "c1", None]})
+    out = add_expected_starters(games).set_index("id")
+    assert pd.isna(out.at[1, "home_qb_expected"]) and out.at[2, "home_qb_expected"] == "q1"
+    assert out.at[3, "home_qb_expected"] == "q2" and out.at[3, "home_qb_expected_starts"] == 1
+    assert out.at[2, "home_qb_starts"] == 0
+
+
+def test_standings_by_conference(cfb_project):
+    import app
+    client = TestClient(app.app)
+    page = client.get("/cfb/standings/").text
+    assert "SEC" in page and "Big Ten" in page and "Michigan" in page
+    sec = client.get("/cfb/standings/?conference=SEC").text
+    assert "Alabama" in sec and "Michigan" not in sec.split("<h2>SEC</h2>")[-1]
+    assert client.get("/cfb/standings/2024/").status_code == 200
+    assert client.get("/cfb/standings/1999/").status_code == 404
+
+
+# ---------------------------------------------------------------- conference title odds
+
+def finished_conference(confs: dict, results: list[tuple[str, str]]) -> dict:
+    """A season with every game played (winner, loser; the winner at home), ready to simulate."""
+    from cfb import conference
+    teams = sorted({t for pair in results for t in pair})
+    index = {t: i for i, t in enumerate(teams)}
+    empty = np.array([], int)
+    return {"season": 2026, "as_of": "2026-12-01", "confs": confs, "conf_of": {t: c for c, ts in confs.items() for t in ts},
+            "teams": teams, "index": index, "rating": np.zeros(len(teams)), "home_adv": 0.0,
+            "known_home": np.array([index[w] for w, _ in results]), "known_away": np.array([index[l] for _, l in results]),
+            "known_home_won": np.ones(len(results), bool), "left_home": empty, "left_away": empty,
+            "left_margin": np.array([], float), "decided": {}}
+
+
+def test_three_way_tie_for_second_goes_to_head_to_head_then_overall_record():
+    from cfb import conference
+    # A wins everything; B, C and D go 2-2 and beat each other in a circle (head-to-head can't
+    # separate them); C also won a game outside the conference, so C has the best overall record.
+    results = [("A", "B"), ("A", "C"), ("A", "D"), ("A", "E"), ("B", "E"), ("C", "E"), ("D", "E"),
+               ("B", "C"), ("C", "D"), ("D", "B"), ("C", "X")]
+    odds = conference.simulate(finished_conference({"Test": list("ABCDE")}, results), n=200).set_index("team")
+    assert odds.at["A", "title_game"] == 1 and odds.at["C", "title_game"] == 1
+    assert odds["title_game"].sum() == 2 and odds["champion"].sum() == pytest.approx(1)
+    assert odds.at["A", "conf_wins"] == 4 and odds.at["C", "wins"] == 3
+
+
+def test_sun_belt_title_game_is_east_winner_against_west_winner():
+    from cfb import conference
+    # Coastal Carolina (East) has the second-best record, but Troy wins the West
+    results = [("App State", "Coastal Carolina"), ("App State", "Troy"), ("App State", "Louisiana"),
+               ("Coastal Carolina", "Troy"), ("Coastal Carolina", "Louisiana"), ("Troy", "Louisiana")]
+    s = finished_conference({"Sun Belt": ["App State", "Coastal Carolina", "Louisiana", "Troy"]}, results)
+    odds = conference.simulate(s, n=200).set_index("team")
+    assert odds.at["App State", "title_game"] == 1 and odds.at["Troy", "title_game"] == 1
+    assert odds.at["Coastal Carolina", "title_game"] == 0
+
+
+def test_title_game_rule_applies_only_after_divisions_ended():
+    from cfb.conference import has_title_game_rule
+    assert has_title_game_rule("SEC", 2024) and not has_title_game_rule("SEC", 2023)
+    assert has_title_game_rule("Big 12", 2022) and has_title_game_rule("Sun Belt", 2025)
+    assert not has_title_game_rule("FBS Independents", 2025)
+
+
+def test_conference_odds_are_simulated_recorded_and_shown(cfb_project, monkeypatch):
+    import app
+    from cfb import conference
+    monkeypatch.setattr(conference, "MIN_TEAMS", 3)       # the simulated league's conferences are tiny
+    monkeypatch.setattr(conference, "SIMULATIONS", 500)
+    conference.main(["--record"], today="2026-10-14")
+    record = pd.read_csv(conference.RECORD_PATH)
+    assert set(record["conference"]) == {"SEC", "Big Ten"}
+    for _, group in record.groupby("conference"):
+        assert group["champion"].sum() == pytest.approx(1) and group["title_game"].sum() == pytest.approx(2)
+    client = TestClient(app.app)
+    page = client.get("/cfb/conference-odds/").text
+    assert "Conference title odds: 2026" in page and "Georgia" in page and "Michigan" in page
+    sec = client.get("/cfb/conference-odds/?conference=SEC").text
+    assert "Georgia" in sec and "Michigan" not in sec
+    assert client.get("/cfb/conference-odds/?conference=Nope").status_code == 404
+
+
+def test_conference_odds_page_without_odds(cfb_project):
+    import app
+    page = TestClient(app.app).get("/cfb/conference-odds/")
+    assert page.status_code == 200 and "No conference odds yet" in page.text

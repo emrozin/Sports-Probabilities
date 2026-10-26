@@ -14,9 +14,10 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from cfb.model import MARGIN_SD, elo_probability, fit, load_games, load_market, window
+from cfb.model import MARGIN_SD, elo_probability, fit, load_games, load_market, team_strength, window
 from cfb.predict_upcoming import MODEL_NAME, MODEL_VERSION
 from cfb.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
+import espn
 from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
 
 DB_PATH = ROOT / "data" / "sports.db"
@@ -28,7 +29,9 @@ _cache: dict = {}
 GAME_COLUMNS = ["id", "season", "date", "kickoff", "status", "home", "away", "home_score", "away_score", "neutral_site",
                 "week", "season_type", "source_game_id", "home_division", "away_division", "home_conference",
                 "away_conference", "home_elo", "away_elo", "spread_line", "total_line", "notes", "venue",
-                "conference_game", "elo_home"]
+                "conference_game", "home_qb", "home_qb_name", "away_qb", "away_qb_name", "home_qb_expected",
+                "away_qb_expected", "home_qb_starts", "away_qb_starts", "home_qb_expected_starts",
+                "away_qb_expected_starts", "elo_home"]
 
 
 def connect():
@@ -46,13 +49,18 @@ def render(request: Request, template: str, context: dict, status_code: int = 20
     return templates.TemplateResponse(request, f"cfb/{template}", {"sport": "cfb", **context}, status_code=status_code)
 
 
-def load_predictions(conn, name: str, version: str) -> pd.DataFrame:
-    return pd.read_sql("""SELECT p.game_id AS id, MAX(CASE WHEN p.outcome = 'home' THEN p.probability END) AS model_home,
-                                 MAX(pg.exp_home) AS exp_home, MAX(pg.exp_away) AS exp_away
-                          FROM predictions p LEFT JOIN prediction_goals pg ON pg.game_id = p.game_id
-                               AND pg.model_name = p.model_name AND pg.model_version = p.model_version
-                          WHERE p.model_name = ? AND p.model_version = ? GROUP BY p.game_id""",
-                       conn, params=(name, version))
+def load_predictions(conn, name: str, version: str | None) -> pd.DataFrame:
+    """One row per game. version None: every version, keeping each game's most recently saved one
+    (live predictions recorded by an earlier model version still count)."""
+    df = pd.read_sql("""SELECT p.game_id AS id, p.model_version, MAX(p.created_at) AS created_at,
+                               MAX(CASE WHEN p.outcome = 'home' THEN p.probability END) AS model_home,
+                               MAX(pg.exp_home) AS exp_home, MAX(pg.exp_away) AS exp_away
+                        FROM predictions p LEFT JOIN prediction_goals pg ON pg.game_id = p.game_id
+                             AND pg.model_name = p.model_name AND pg.model_version = p.model_version
+                        WHERE p.model_name = ? AND (? IS NULL OR p.model_version = ?)
+                        GROUP BY p.game_id, p.model_version""", conn, params=(name, version, version))
+    df = df.sort_values(["created_at", "model_version"]).drop_duplicates("id", keep="last")
+    return df[["id", "model_home", "exp_home", "exp_away"]]
 
 
 def data() -> dict:
@@ -68,9 +76,12 @@ def data() -> dict:
             has = conn.execute("SELECT name FROM sqlite_master WHERE name = 'cfb_game_info'").fetchone() is not None
             if has:
                 games = load_games(conn)
-                live = load_predictions(conn, MODEL_NAME, MODEL_VERSION).assign(source="Saved before kickoff")
+                live = load_predictions(conn, MODEL_NAME, None).assign(source="Saved before kickoff")
                 back = load_predictions(conn, BACKTEST_NAME, BACKTEST_VERSION).assign(source="Backtest")
                 market = load_market(conn)
+                # this season's lines from ESPN (espn.py), for games the consensus file doesn't have
+                lines = espn.market_lines(conn, "CFB")
+                market = pd.concat([market, lines[~lines["id"].isin(market["id"])]], ignore_index=True)
     if not has or games.empty:
         empty = pd.DataFrame(columns=GAME_COLUMNS)
         _cache.update(games=empty, predictions=pd.DataFrame(columns=["id", "model_home", "exp_home", "exp_away", "source"]),
@@ -124,9 +135,11 @@ def game_card(g, current_team: str | None = None) -> dict:
             "elo": two_way(g.elo_home) if pd.notna(g.elo_home) else None,
             "source": getattr(g, "source", None) if isinstance(getattr(g, "source", None), str) else None,
             "model_line": line_text(margin, g.home, g.away),
-            "market_line": line_text(-g.spread_line if pd.notna(g.spread_line) else None, g.home, g.away),
+            "market_line": line_text(-spread if pd.notna(spread := (g.spread_line if pd.notna(g.spread_line)
+                                                                   else getattr(g, "market_spread", np.nan))) else None, g.home, g.away),
             "model_total": f"{g.exp_home + g.exp_away:.1f}" if margin is not None else None,
-            "market_total": f"{g.total_line:g}" if pd.notna(g.total_line) else None}
+            "market_total": f"{total:g}" if pd.notna(total := (g.total_line if pd.notna(g.total_line)
+                                                               else getattr(g, "market_total", np.nan))) else None}
     card["edge"] = edge(card["model"], card["market"], {"home": g.home, "away": g.away})
     card["when"] = ", ".join(x for x in ([card["date"]] if current_team else []) + [card["kickoff"]]
                              + (["neutral site"] if card["neutral"] else []) + [card["notes"]] if x)
@@ -229,6 +242,44 @@ def summary(df: pd.DataFrame) -> dict | None:
     return out
 
 
+def starters_before(played: pd.DataFrame, cutoff: str) -> dict:
+    """{team: (its latest starting quarterback before cutoff, his career starts by then)}."""
+    done = played[played["date"] < cutoff]
+    starts: dict = {}
+    latest: dict = {}
+    for side in ("home", "away"):
+        for team, qb in zip(done[side], done[f"{side}_qb"]):
+            if isinstance(qb, str) and qb:
+                starts[qb] = starts.get(qb, 0) + 1
+                latest[team] = qb   # games are in date order, so the last one wins
+    return {team: (qb, starts.get(qb, 0)) for team, qb in latest.items()}
+
+
+def qb_names() -> dict:
+    d = data()
+    if "qb_names" not in d:
+        g = d["games"]
+        d["qb_names"] = dict(zip(pd.concat([g["home_qb"], g["away_qb"]]), pd.concat([g["home_qb_name"], g["away_qb_name"]])))
+    return d["qb_names"]
+
+
+def strength(model: dict, team: str, starters: dict) -> float:
+    qb, n = starters.get(team, (None, np.nan))
+    return team_strength(model, team, qb, n)
+
+
+def fbs_centered(model: dict, season: int, starters: dict) -> pd.DataFrame:
+    """Offense, defense, quarterback and overall ratings for the season's FBS teams, measured from
+    the average FBS team (the model itself is centered on every rated team, FCS schools included)."""
+    r = model["ratings"]
+    teams = [t for t in fbs_teams(season) if t in r.index]
+    table = pd.DataFrame({"offense": r.loc[teams, "offense"], "defense": r.loc[teams, "defense"]})
+    table["qb"] = [strength(model, t, starters) - r.at[t, "offense"] - r.at[t, "defense"] for t in teams]
+    table = table - table.mean()
+    table["overall"] = table.sum(axis=1)
+    return table
+
+
 def current_model() -> dict | None:
     d = data()
     today = date.today().isoformat()
@@ -241,6 +292,8 @@ def current_model() -> dict | None:
         train = window(everything[everything["status"] == "final"], today)
         season = int(played["season"].max()) if not played.empty else None
         d["model"] = fit(train, today, season) if not train.empty else None
+        if d["model"] is not None:
+            d["model"]["starters"] = starters_before(everything[everything["status"] == "final"], today)
         d["model_day"] = today
     return d["model"]
 
@@ -267,25 +320,24 @@ def ratings(request: Request, conference: str | None = None):
     if model is None or games.empty:
         return render(request, "ratings.html", {"active": "ratings", "rows": []})
     season = int(games.loc[games["status"] == "final", "season"].max())
-    r = model["ratings"]
-    teams = [t for t in fbs_teams(season) if t in r.index]
+    table = fbs_centered(model, season, model["starters"])
     rows = []
-    for t in teams:
-        conf = team_conference(t, season)
-        rows.append({"team": t, "conference": conf, "offense": r.at[t, "offense"], "defense": r.at[t, "defense"],
-                     "overall": r.at[t, "offense"] + r.at[t, "defense"]})
+    for t, r in table.iterrows():
+        qb = model["starters"].get(t, (None, 0))
+        rows.append({"team": t, "conference": team_conference(t, season), "offense": r["offense"], "defense": r["defense"],
+                     "qb_value": r["qb"], "qb_name": qb_names().get(qb[0]), "overall": r["overall"]})
     rows.sort(key=lambda x: -x["overall"])
     for rank, row in enumerate(rows, 1):
         row["rank"] = rank
     confs = [c for c in POWER if any(r["conference"] == c for r in rows)] + \
         sorted({r["conference"] for r in rows if r["conference"] and r["conference"] not in POWER})
     shown = [r for r in rows if not conference or r["conference"] == conference]
-    fmt = lambda v: {"text": signed_number(v, 1), "cls": "good" if v > 0 else "bad" if v < 0 else ""}
+    fmt = lambda v: {"text": signed_number(v, 1), "cls": "good" if round(v, 1) > 0 else "bad" if round(v, 1) < 0 else ""}
     return render(request, "ratings.html", {
         "active": "ratings", "conference": conference, "conferences": confs, "as_of": day_label(date.today().isoformat()),
         "home_adv": f"{model['home_adv']:.1f}",
-        "rows": [{**r, "url": team_url(r["team"]), "o": fmt(r["offense"]), "d": fmt(r["defense"]), "all": fmt(r["overall"])}
-                 for r in shown]})
+        "rows": [{**r, "url": team_url(r["team"]), "o": fmt(r["offense"]), "d": fmt(r["defense"]), "all": fmt(r["overall"]),
+                  "qb": fmt(r["qb_value"])} for r in shown]})
 
 
 def find_team(slug: str) -> str:
@@ -316,9 +368,7 @@ def season_ratings(season: int) -> pd.DataFrame:
             cutoffs.append((label, when, (pd.Timestamp(w.max) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")))
         for step, (label, when, cutoff) in enumerate(cutoffs):
             model = fit(window(played, cutoff), cutoff, season)
-            overall = (model["ratings"]["offense"] + model["ratings"]["defense"])
-            fbs = [t for t in fbs_teams(season) if t in overall.index]
-            ranked = overall[fbs].sort_values(ascending=False)
+            ranked = fbs_centered(model, season, starters_before(played, cutoff))["overall"].sort_values(ascending=False)
             for rank, (team, value) in enumerate(ranked.items(), 1):
                 rows.append({"step": step, "label": label, "when": when, "team": team, "overall": float(value),
                              "rank": rank, "teams": len(ranked)})
@@ -373,12 +423,14 @@ def team_page(request: Request, slug: str, season: int | None):
                      "tip": f"{week_label(g.season_type, g.week)}, {'vs' if at_home else 'at'} {g.away if at_home else g.home}: "
                             f"model {chance * 100:.0f}%, {'won' if outcome == 'W' else 'lost'} {int(own_s)}–{int(opp_s)}"})
     current = ratings[(ratings["team"] == team)].sort_values("step").iloc[-1] if line else None
+    names = pd.concat([played.loc[played["home"] == team, "home_qb_name"], played.loc[played["away"] == team, "away_qb_name"]]).dropna()
+    quarterbacks = [{"name": q, "starts": int(k)} for q, k in names.value_counts().items()]
     return render(request, "team.html", {
         "active": None, "team": team, "season": season, "conference": conf,
         "record": f"{won}–{len(played) - won}", "conf_record": f"{conf_won}–{len(conf_games) - conf_won}" if len(conf_games) else None,
         "rank": f"{ordinal(int(current['rank']))} of {int(current['teams'])}" if current is not None else None,
         "rating": signed_number(current["overall"], 1) if current is not None else None,
-        "summary": summary(played), "rating_chart": line, "chance_chart": chance_bars(bars) if bars else None,
+        "summary": summary(played), "rating_chart": line, "quarterbacks": quarterbacks, "chance_chart": chance_bars(bars) if bars else None,
         "played": [game_card(g, team) for g in played.sort_values("date", ascending=False).itertuples()],
         "coming": [game_card(g, team) for g in coming.dropna(subset=["model_home"]).itertuples()],
         "schedule": [{"date": day_label(g.date, with_year=True), "venue": "vs" if g.home == team else "at",
@@ -400,8 +452,17 @@ def track_record(request: Request):
     for (season, stype, week), group in sorted(df.groupby(["season", "season_type", "week"]), key=lambda kv: kv[1]["date"].min(), reverse=True):
         weeks.append({"label": f"{season} {week_label(stype, week)}", "summary": summary(group),
                       "games": [game_card(g) for g in group.itertuples()]})
+    from charts import record_chart
+    chart_weeks = []
+    for (season, stype, week), group in sorted(df.groupby(["season", "season_type", "week"]), key=lambda kv: kv[1]["date"].min()):
+        g = group.dropna(subset=["model_home", "elo_home"])
+        won = (g["home_score"] > g["away_score"]).to_numpy()
+        chart_weeks.append({"label": "Bowls" if stype == "postseason" else f"Wk {week}",
+                            "model": np.where(won, g["model_home"], 1 - g["model_home"]),
+                            "benchmark": np.where(won, g["elo_home"], 1 - g["elo_home"])})
     return render(request, "track_record.html", {"active": "track", "weeks": weeks, "overall": summary(df),
-                                                 "record_url": RECORD_URL})
+                                                 "record_url": RECORD_URL,
+                                                 "record_chart": record_chart(chart_weeks, "CollegeFootballData's Elo")})
 
 
 @router.get("/backtest/", response_class=HTMLResponse)
@@ -445,3 +506,145 @@ def backtest_page(request: Request):
                      "elo_priced": f"{priced['elo_ll'].mean():.4f}",
                      "favorite": f"{((held['model_home'] > 0.5) == won[df['season'].to_numpy() >= HELD_OUT_FROM]).mean() * 100:.1f}%"},
         "margin_sd": f"{MARGIN_SD:g}"})
+
+
+# ---------------------------------------------------------------- standings
+
+def standings_table(games: pd.DataFrame, season: int) -> pd.DataFrame:
+    """Every top-division (FBS) team's record in a season: overall (regular season and bowls) and in
+    conference games, points for and against. One row per team, with its conference."""
+    s = games[(games["season"] == season) & (games["status"] == "final")]
+    rows = []
+    for side, other in (("home", "away"), ("away", "home")):
+        part = s[s[f"{side}_division"] == "fbs"]
+        rows.append(pd.DataFrame({
+            "team": part[side], "conference": part[f"{side}_conference"],
+            "won": (part[f"{side}_score"] > part[f"{other}_score"]).astype(int),
+            "lost": (part[f"{side}_score"] < part[f"{other}_score"]).astype(int),
+            "conf_game": (part["home_conference"] == part["away_conference"]) & (part["season_type"] == "regular"),
+            "pf": part[f"{side}_score"], "pa": part[f"{other}_score"]}))
+    rows = pd.concat(rows, ignore_index=True)
+    if rows.empty:
+        return pd.DataFrame(columns=["team", "conference", "won", "lost", "conf_won", "conf_lost", "pf", "pa"])
+    rows["conf_won"] = rows["won"] * rows["conf_game"]
+    rows["conf_lost"] = rows["lost"] * rows["conf_game"]
+    table = rows.groupby("team").agg(conference=("conference", lambda c: c.mode().iloc[0] if not c.mode().empty else None),
+                                     won=("won", "sum"), lost=("lost", "sum"), conf_won=("conf_won", "sum"),
+                                     conf_lost=("conf_lost", "sum"), pf=("pf", "sum"), pa=("pa", "sum")).reset_index()
+    pct = lambda w, l: np.where(w + l > 0, w / np.maximum(w + l, 1), 0.0)
+    table["conf_pct"] = pct(table["conf_won"], table["conf_lost"])
+    table["pct"] = pct(table["won"], table["lost"])
+    return table.sort_values(["conference", "conf_pct", "conf_won", "pct", "won"],
+                             ascending=[True, False, False, False, False]).reset_index(drop=True)
+
+
+@router.get("/standings/", response_class=HTMLResponse)
+def standings_latest(request: Request, conference: str | None = None):
+    return standings_page(request, None, conference)
+
+
+@router.get("/standings/{season}/", response_class=HTMLResponse)
+def standings_season(request: Request, season: int, conference: str | None = None):
+    return standings_page(request, season, conference)
+
+
+def standings_page(request: Request, season: int | None, conference: str | None):
+    games = data()["games"]
+    finished = games[games["status"] == "final"]
+    seasons = sorted(s for s in finished["season"].unique() if s >= START_SEASON)
+    if not seasons:
+        return render(request, "standings.html", {"active": "standings", "groups": []})
+    if season is None:
+        season = seasons[-1]
+    elif season not in seasons:
+        raise HTTPException(status_code=404)
+    table = standings_table(games, season)
+    model = current_model() if season == seasons[-1] else None
+    ratings = fbs_centered(model, season, model["starters"]) if model else None
+    confs = [c for c in POWER if c in set(table["conference"])] + \
+        sorted(c for c in set(table["conference"].dropna()) if c not in POWER)
+    groups = []
+    for conf in confs:
+        if conference and conf != conference:
+            continue
+        members = table[table["conference"] == conf]
+        has_conf_games = bool((members["conf_won"] + members["conf_lost"]).sum())
+        groups.append({"label": conf, "conference_games": has_conf_games, "rows": [{
+            "team": r.team, "url": team_url(r.team, season if season != seasons[-1] else None),
+            "record": f"{r.won}–{r.lost}", "conf": f"{r.conf_won}–{r.conf_lost}" if has_conf_games else "",
+            "pf": int(r.pf), "pa": int(r.pa), "diff": signed_number(r.pf - r.pa),
+            "rating": signed_number(ratings.at[r.team, "overall"], 1)
+            if ratings is not None and r.team in ratings.index else None} for r in members.itertuples()]})
+    return render(request, "standings.html", {
+        "active": "standings", "groups": groups, "season": season, "is_current": season == seasons[-1],
+        "conference": conference, "conferences": confs, "base_url": f"{BASE}/cfb/standings/{season}/",
+        "seasons": [{"label": str(s), "url": f"{BASE}/cfb/standings/{s}/", "selected": s == season} for s in sorted(seasons, reverse=True)]})
+
+
+# ---------------------------------------------------------------- conference title odds
+
+def load_conference_odds() -> pd.DataFrame:
+    if not DB_PATH.exists():
+        return pd.DataFrame()
+    with connect() as conn:
+        if conn.execute("SELECT name FROM sqlite_master WHERE name = 'cfb_conference_odds'").fetchone() is None:
+            return pd.DataFrame()
+        return pd.read_sql("SELECT * FROM cfb_conference_odds", conn)
+
+
+def conference_odds() -> dict | None:
+    """The latest title odds for the latest season that has them, and the ones from about a week
+    earlier (for the change column). Cached with the rest of the data."""
+    d = data()
+    if "conference_odds" not in d:
+        odds = load_conference_odds()
+        result = None
+        if not odds.empty:
+            season = int(odds["season"].max())
+            odds = odds[odds["season"] == season]
+            dates = sorted(odds["as_of"].unique())
+            week_ago = [x for x in dates if pd.Timestamp(x) <= pd.Timestamp(dates[-1]) - pd.Timedelta(days=6)]
+            result = {"season": season, "as_of": dates[-1], "latest": odds[odds["as_of"] == dates[-1]],
+                      "before": odds[odds["as_of"] == week_ago[-1]].set_index("team") if week_ago else None,
+                      "before_as_of": week_ago[-1] if week_ago else None}
+        d["conference_odds"] = result
+    return d["conference_odds"]
+
+
+@router.get("/conference-odds/", response_class=HTMLResponse)
+def conference_odds_page(request: Request, conference: str | None = None):
+    from cfb.conference import RATING_SD, SIMULATIONS
+    from nfl.site import odds_text
+    odds = conference_odds()
+    if odds is None:
+        return render(request, "conference_odds.html", {"active": "conference", "groups": [], "conferences": []})
+    latest = odds["latest"]
+    table = standings_table(data()["games"], odds["season"]).set_index("team")
+    confs = [c for c in POWER if c in set(latest["conference"])] + \
+        sorted(c for c in set(latest["conference"]) if c not in POWER)
+    if conference and conference not in confs:
+        raise HTTPException(status_code=404)
+    cell = lambda p: {"text": odds_text(p), "value": float(p)}
+    groups = []
+    for conf in confs:
+        if conference and conf != conference:
+            continue
+        rows = []
+        for r in latest[latest["conference"] == conf].sort_values(["champion", "title_game", "conf_wins"], ascending=False).itertuples():
+            record = table.loc[r.team] if r.team in table.index else None
+            change = None
+            if odds["before"] is not None and r.team in odds["before"].index:
+                delta = (r.champion - odds["before"].at[r.team, "champion"]) * 100
+                if round(delta) != 0:
+                    change = {"text": f"{delta:+.0f}".replace("-", "−"), "dir": "up" if delta > 0 else "down"}
+            rows.append({"team": r.team, "url": team_url(r.team),
+                         "conf": f"{record.conf_won}–{record.conf_lost}" if record is not None else "0–0",
+                         "record": f"{record.won}–{record.lost}" if record is not None else "0–0",
+                         "conf_wins": f"{r.conf_wins:.1f}–{r.conf_games - r.conf_wins:.1f}",
+                         "title_game": cell(r.title_game), "champion": cell(r.champion), "change": change})
+        groups.append({"label": conf, "sun_belt": conf == "Sun Belt", "rows": rows})
+    return render(request, "conference_odds.html", {
+        "active": "conference", "groups": groups, "conferences": confs, "conference": conference,
+        "base_url": f"{BASE}/cfb/conference-odds/", "season": odds["season"],
+        "as_of": day_label(odds["as_of"]), "before_as_of": day_label(odds["before_as_of"]) if odds["before_as_of"] else None,
+        "simulations": f"{SIMULATIONS:,}", "rating_sd": f"{RATING_SD:g}"})

@@ -17,8 +17,10 @@ BASE = os.environ.get("SITE_BASE", "").rstrip("/")  # "" locally, the repository
 templates = Jinja2Templates(directory=ROOT / "templates")
 templates.env.globals["base"] = BASE
 # The sport menu in the header: (label, sport code, home page)
-templates.env.globals["sports"] = [("Premier League", "epl", f"{BASE}/"), ("NFL", "nfl", f"{BASE}/nfl/"),
-                                   ("College", "cfb", f"{BASE}/cfb/")]
+templates.env.globals["sports"] = [("Today", "today", f"{BASE}/today/"), ("Premier League", "epl", f"{BASE}/"), ("NFL", "nfl", f"{BASE}/nfl/"),
+                                   ("NBA", "nba", f"{BASE}/nba/"), ("College football", "cfb", f"{BASE}/cfb/"),
+                                   ("College basketball", "cbb", f"{BASE}/cbb/"),
+                                   ("Betting", "betting", f"{BASE}/betting/")]
 
 # Team colors (colors.py): style="..." strings that set --home/--away (a game) or --team (a team page)
 import colors  # noqa: E402

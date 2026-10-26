@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "nfl/macros.html" import props_table %}
+{% block title %}Player props | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Likeliest player props</h1>
+  <p class="lede">Each day's {{ props_per_day }} props the model thinks are likeliest to hit, one per player.</p>
+  <details class="explain">
+    <summary>How this works</summary>
+    <p>Each player's points, rebounds, assists and threes are projected from his recent rate per minute and his expected minutes, as a share of what the model expects his team to get, so when a teammate is out his share goes up. The chance of reaching a line comes from how widely results have spread around projections in past seasons. The lines considered: {% for k, v in lines.items() %}{{ k }} {{ v }}{% if not loop.last %}; {% endif %}{% endfor %}. Easy ones (like 10+ points for a star) are left out: only points from 15, rebounds from 8, assists from 5 and threes from 2.</p>
+    <p>Likely to hit isn't the same as a good bet: the sportsbook's price matters, and these aren't compared with it. On 2017&ndash;18 to 2025&ndash;26 the projections missed by 2&ndash;3% less than each player's season average for points, assists and threes (rebounds about the same), and the chances were honest: props given 60&ndash;75% hit 67% of the time, 75&ndash;90% 81%, and the five likeliest each day hit 92% (predicted 94%).</p>
+  </details>
+</div>
+{% if days %}
+  {% for day in days %}
+  <section class="day">
+    <h2>{{ day.label }}{% if day.settled %} <span class="muted">{{ day.hits }} of {{ day.settled }} hit</span>{% endif %}</h2>
+    {% if day.props %}{{ props_table(day.props, show_game=True) }}{% else %}<p class="muted">No props at the chosen lines.</p>{% endif %}
+  </section>
+  {% endfor %}
+{% else %}
+  <section class="empty"><h2>No player projections yet</h2><p>Run <code>python -m nba.predict_players</code> after <code>python -m nba.predict_upcoming</code>.</p></section>
+{% endif %}
+{% endblock %}

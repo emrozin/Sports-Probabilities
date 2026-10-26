@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Backtest | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>How good is the model?</h1>
+  {% if seasons %}<p class="lede">Every week since 2005&ndash;06, the model was trained only on earlier games, then asked to predict that week the way a live forecast is made: each team's lineup is every player available for the game (injured players are what the injury report would have ruled out), with his usual minutes. Settings were tuned on 2010&ndash;11 to 2013&ndash;14; {{ from }} to {{ to }} is the honest test.</p>
+  <details class="explain"><summary>Why Elo?</summary>
+    <p>There are no free historical betting lines for the NBA, so the model is compared with a simple Elo rating, with the settings FiveThirtyEight used: one number per team, moved after every game by how surprising the result was, pulled a quarter of the way back to average each new season. Lines from ESPN are saved from this season on, so the track record will show the model against the market.</p>
+  </details>{% endif %}
+</div>
+{% if seasons %}
+<section class="headline">
+  <div class="scorecard">
+    <div class="stat"><p class="stat-value">{{ headline.model_typical }}%</p><p class="stat-label">Model's typical probability for the winner, {{ from }} to {{ to }} ({{ "{:,}".format(headline.games) }} games)</p></div>
+    <div class="stat"><p class="stat-value stat-muted">{{ headline.elo_typical }}%</p><p class="stat-label">Simple Elo rating's</p></div>
+    <div class="stat"><p class="stat-value stat-muted">{{ headline.favorite }}</p><p class="stat-label">Games won by the model's favorite</p></div>
+  </div>
+  <table class="dev-table track-table">
+    <thead><tr><th scope="col">Log loss, {{ from }} to {{ to }} (lower is better)</th><th scope="col" class="num">All games</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">This model</th><td class="num"><strong>{{ headline.model }}</strong></td></tr>
+      <tr><th scope="row">Simple Elo rating</th><td class="num">{{ headline.elo }}</td></tr>
+    </tbody>
+  </table>
+</section>
+{% if development %}
+<section class="development">
+  <h2>What the players add</h2>
+  <table class="dev-table track-table">
+    <thead><tr><th scope="col">Version (log loss, {{ from }} to {{ to }})</th><th scope="col" class="num">Log loss</th></tr></thead>
+    <tbody>{% for label, value in development %}<tr><th scope="row">{{ label }}</th><td class="num">{{ value }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+<section class="seasons">
+  <h2>Season by season</h2>
+  <div class="table-wrap">
+    <table class="season-table">
+      <thead><tr><th scope="col">Season</th><th scope="col" class="num">Games</th><th scope="col" class="num">Model</th><th scope="col" class="num">Elo</th></tr></thead>
+      <tbody>{% for s in seasons %}<tr{% if s.held_out %} class="held-out"{% endif %}><th scope="row">{{ s.label }}{% if not s.held_out %} <span class="tag">tuning</span>{% endif %}</th>
+        <td class="num">{{ s.games }}</td><td class="num">{{ s.model }}</td><td class="num">{{ s.elo }}</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+<section class="development">
+  <h2>When the model gives a team a chance, does it win that often?</h2>
+  <table class="dev-table track-table">
+    <thead><tr><th scope="col">Home team's chance</th><th scope="col" class="num">Games</th><th scope="col" class="num">Average forecast</th><th scope="col" class="num">Home team won</th></tr></thead>
+    <tbody>{% for c in calibration %}<tr><th scope="row">{{ c.range }}</th><td class="num">{{ c.games }}</td><td class="num">{{ c.predicted }}</td><td class="num">{{ c.actual }}</td></tr>{% endfor %}</tbody>
+  </table>
+  <p class="note">The win chance comes from the expected margin: NBA margins typically land within about {{ margin_sd }} points of it either way.</p>
+</section>
+{% else %}
+<section class="empty"><h2>No backtest results yet</h2><p>Run <code>python -m nba.run_backtest</code> to generate them.</p></section>
+{% endif %}
+{% endblock %}

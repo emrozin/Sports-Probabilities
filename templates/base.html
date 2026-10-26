@@ -1,6 +1,6 @@
 <!doctype html>
 {% set sport = sport | default('epl') %}
-{% set sport_name = {'nfl': 'NFL', 'cfb': 'College football'}.get(sport, 'Premier League') %}
+{% set sport_name = {'nfl': 'NFL', 'nba': 'NBA', 'cfb': 'College football', 'cbb': 'College basketball', 'today': 'Sports', 'betting': 'Sports'}.get(sport, 'Premier League') %}
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -15,13 +15,16 @@
 <body class="sport-{{ sport }}">
   <header class="site-header">
     <div class="site-brand">
-      <a class="site-title" href="{{ base }}{{ {'nfl': '/nfl/', 'cfb': '/cfb/'}.get(sport, '/') }}">{{ sport_name }} probabilities</a>
+      <a class="site-title" href="{{ base }}{{ {'nfl': '/nfl/', 'nba': '/nba/', 'cfb': '/cfb/', 'cbb': '/cbb/', 'today': '/today/', 'betting': '/today/'}.get(sport, '/') }}">{{ sport_name }} probabilities</a>
       <nav class="sport-tabs" aria-label="Sport">
         {% for label, code, url in sports %}<a href="{{ url }}" {% if code == sport %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
       </nav>
     </div>
     <nav aria-label="Main">
-      {% if sport == 'nfl' %}
+      {% if sport in ('today', 'betting') %}
+      <a href="{{ base }}/today/" {% if active == 'today' %}aria-current="page"{% endif %}>Today</a>
+      <a href="{{ base }}/betting/" {% if active == 'betting' %}aria-current="page"{% endif %}>Betting</a>
+      {% elif sport == 'nfl' %}
       <a href="{{ base }}/nfl/" {% if active == 'upcoming' %}aria-current="page"{% endif %}>Upcoming</a>
       <a href="{{ base }}/nfl/results/" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
       <a href="{{ base }}/nfl/standings/" {% if active == 'standings' %}aria-current="page"{% endif %}>Standings</a>
@@ -29,9 +32,27 @@
       <a href="{{ base }}/nfl/track-record/" {% if active == 'track' %}aria-current="page"{% endif %}>Track record</a>
       <a href="{{ base }}/nfl/backtest/" {% if active == 'backtest' %}aria-current="page"{% endif %}>Backtest</a>
       <a href="{{ base }}/nfl/ratings/" {% if active == 'ratings' %}aria-current="page"{% endif %}>Team ratings</a>
+      {% elif sport == 'nba' %}
+      <a href="{{ base }}/nba/" {% if active == 'upcoming' %}aria-current="page"{% endif %}>Upcoming</a>
+      <a href="{{ base }}/nba/props/" {% if active == 'props' %}aria-current="page"{% endif %}>Player props</a>
+      <a href="{{ base }}/nba/results/" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
+      <a href="{{ base }}/nba/standings/" {% if active == 'standings' %}aria-current="page"{% endif %}>Standings</a>
+      <a href="{{ base }}/nba/playoffs/" {% if active == 'playoffs' %}aria-current="page"{% endif %}>Playoff odds</a>
+      <a href="{{ base }}/nba/ratings/" {% if active == 'ratings' %}aria-current="page"{% endif %}>Ratings</a>
+      <a href="{{ base }}/nba/track-record/" {% if active == 'track' %}aria-current="page"{% endif %}>Track record</a>
+      <a href="{{ base }}/nba/backtest/" {% if active == 'backtest' %}aria-current="page"{% endif %}>Backtest</a>
+      {% elif sport == 'cbb' %}
+      <a href="{{ base }}/cbb/" {% if active == 'upcoming' %}aria-current="page"{% endif %}>Upcoming</a>
+      <a href="{{ base }}/cbb/results/" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
+      <a href="{{ base }}/cbb/standings/" {% if active == 'standings' %}aria-current="page"{% endif %}>Standings</a>
+      <a href="{{ base }}/cbb/ratings/" {% if active == 'ratings' %}aria-current="page"{% endif %}>Team ratings</a>
+      <a href="{{ base }}/cbb/track-record/" {% if active == 'track' %}aria-current="page"{% endif %}>Track record</a>
+      <a href="{{ base }}/cbb/backtest/" {% if active == 'backtest' %}aria-current="page"{% endif %}>Backtest</a>
       {% elif sport == 'cfb' %}
       <a href="{{ base }}/cfb/" {% if active == 'upcoming' %}aria-current="page"{% endif %}>Upcoming</a>
       <a href="{{ base }}/cfb/results/" {% if active == 'results' %}aria-current="page"{% endif %}>Results</a>
+      <a href="{{ base }}/cfb/standings/" {% if active == 'standings' %}aria-current="page"{% endif %}>Standings</a>
+      <a href="{{ base }}/cfb/conference-odds/" {% if active == 'conference' %}aria-current="page"{% endif %}>Title odds</a>
       <a href="{{ base }}/cfb/ratings/" {% if active == 'ratings' %}aria-current="page"{% endif %}>Team ratings</a>
       <a href="{{ base }}/cfb/track-record/" {% if active == 'track' %}aria-current="page"{% endif %}>Track record</a>
       <a href="{{ base }}/cfb/backtest/" {% if active == 'backtest' %}aria-current="page"{% endif %}>Backtest</a>
@@ -52,7 +73,13 @@
   </main>
 
   <footer class="site-footer">
-    {% if sport == 'cfb' %}
+    {% if sport in ('today', 'betting') %}
+    <p>Every sport's model, next to the betting market. This is a statistics project, not betting advice.</p>
+    {% elif sport == 'nba' %}
+    <p>Probabilities come from player ratings and who's available: every player's value from how his teams did with him on the court, weighted by his expected minutes, with injuries from ESPN's report. Data from ESPN via sportsdataverse-data; betting lines from ESPN. This is a statistics project, not betting advice.</p>
+    {% elif sport == 'cbb' %}
+    <p>Probabilities come from a points model: offense and defense ratings for every Division I team, fitted to the last three seasons with recent games weighted most. Data from ESPN via sportsdataverse-data. This is a statistics project, not betting advice.</p>
+    {% elif sport == 'cfb' %}
     <p>Probabilities come from a points model: offense and defense ratings for every team, fitted to the last three seasons with recent games weighted most. Data from CollegeFootballData via cfbfastR-data. This is a statistics project, not betting advice.</p>
     {% elif sport == 'nfl' %}
     <p>Probabilities come from a points model: offense and defense ratings fitted to four years of games, with recent games weighted more heavily and a rating for every starting quarterback. Data from nflverse. This is a statistics project, not betting advice.</p>
@@ -60,6 +87,7 @@
     <p>Probabilities come from a Poisson model fitted to three years of results and expected goals, with recent matches weighted more heavily. Data from football-data.co.uk and Understat. This is a statistics project, not betting advice.</p>
     {% endif %}
     <p><a href="https://github.com/emrozin/Sports-Probabilities">Code and methodology on GitHub</a></p>
+    {% if data_updated() %}<p class="updated">Data updated {{ data_updated() }}.</p>{% endif %}
   </footer>
 </body>
 </html>

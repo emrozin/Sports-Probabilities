@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "nba/macros.html" import game_card %}
+{% from "nfl/macros.html" import props_table %}
+{% block title %}Upcoming games | NBA probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Upcoming games</h1>
+  <p class="lede">The model's chance of each team winning, from who's playing: every player's rating and expected minutes, with injured players left out.</p>
+  <details class="explain">
+    <summary>How to read this</summary>
+    <p>The big numbers are the model's chance of each team winning; the thick bar shows the same split, and the thin one the betting market's (DraftKings, via ESPN, with the bookmaker's margin taken out) when there's a line. The table gives the expected winning margin and total points next to the market's spread and total. "Out" lists players ESPN's injury report rules out (Out or Doubtful); their minutes go to their teammates. "Model 6 pts higher" marks games where the model and the market disagree by 5 percentage points or more.</p>
+  </details>
+</div>
+{% if days %}
+  {% for day in days %}
+  <section class="day">
+    <h2>{{ day.label }}</h2>
+    <ul class="matches">{% for g in day.games %}{{ game_card(g) }}{% endfor %}</ul>
+    {% if day.props %}
+    <div class="day-props">
+      <h3 class="props-heading">{{ day.label.split(' ')[0] }}'s likeliest player props</h3>
+      {{ props_table(day.props, show_game=True) }}
+      <p class="note">Each game's own top {{ props_per_game }} are on its game page; more on the <a href="{{ base }}/nba/props/">player props</a> page.</p>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+  <p class="note">Predictions are refreshed with each update, saved before tip-off and never changed afterwards: see the <a href="{{ base }}/nba/track-record/">track record</a>.</p>
+{% else %}
+  <section class="empty">
+    <h2>No upcoming games predicted</h2>
+    <p>{% if season_starts %}The next games are on {{ season_starts }}; forecasts appear up to eight days before each game.{% endif %} Run <code>python -m nba.live</code> and <code>python -m nba.predict_upcoming</code> to make them now.</p>
+    <p><a class="button" href="{{ base }}/nba/results/">See recent results</a></p>
+  </section>
+{% endif %}
+{% endblock %}

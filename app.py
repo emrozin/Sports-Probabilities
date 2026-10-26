@@ -797,8 +797,16 @@ def track_record(request: Request):
             "matches": [match_card(m) for m in group.itertuples()],
         })
 
+    from charts import record_chart
+    chart_weeks = []
+    for week, group in sorted(df.groupby("week"), key=lambda kv: kv[0]):
+        g = group.dropna(subset=["mkt_home"])
+        chart_weeks.append({"label": f"{pd.Timestamp(g['date'].min() if not g.empty else group['date'].min()):%-d %b}",
+                            "model": [getattr(r, f"model_{r.result}") for r in g.itertuples()],
+                            "benchmark": [getattr(r, f"mkt_{r.result}") for r in g.itertuples()]})
     return templates.TemplateResponse(request, "track_record.html", {
         "active": "track",
+        "record_chart": record_chart(chart_weeks, "the betting market"),
         "overall": live_scores(df),
         "weeks": weeks,
         "first_date": day_label(df["date"].min(), with_year=True),
@@ -917,3 +925,9 @@ from nfl.site import router as nfl_router  # noqa: E402
 app.include_router(nfl_router)
 from cfb.site import router as cfb_router  # noqa: E402
 app.include_router(cfb_router)
+from cbb.site import router as cbb_router  # noqa: E402
+app.include_router(cbb_router)
+from nba.site import router as nba_router  # noqa: E402
+app.include_router(nba_router)
+from overview import router as overview_router  # noqa: E402
+app.include_router(overview_router)

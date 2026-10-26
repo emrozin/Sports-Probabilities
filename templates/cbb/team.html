@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "cbb/macros.html" import game_card, scorecard %}
+{% from "charts.html" import rating_line, chance_columns %}
+{% block title %}{{ team }} | College basketball probabilities{% endblock %}
+{% block main_style %} class="teamed team-page" style="{{ cbb_team_colors(team) }}"{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow"><a href="{{ base }}/cbb/ratings/{% if conference %}?conference={{ conference|urlencode }}{% endif %}">{{ conference or 'Ratings' }}</a></p>
+  <h1>{{ team }}</h1>
+  <p>{{ record }} in {{ season }}{% if conf_record %} ({{ conf_record }} in conference){% endif %}.{% if rating %} Model rating {{ rating }} points per game against an average Division I team, {{ rank }} in Division I.{% endif %}</p>
+  {% if seasons|length > 1 %}
+  <div class="season-picker"><label for="season">Season</label>
+    <select id="season" onchange="window.location.href = this.value">{% for s in seasons %}<option value="{{ s.url }}" {% if s.selected %}selected{% endif %}>{{ s.label }}</option>{% endfor %}</select>
+  </div>{% endif %}
+</div>
+{{ scorecard(summary) }}
+{% if rating_chart or chance_chart %}
+<section class="team-charts">
+  {% if rating_chart %}{{ rating_line(rating_chart, 'Model rating through ' ~ season, 'Points per game better (+) or worse (−) than an average team, at the start of the season and after each week. Hover over a point for its rank.') }}{% endif %}
+  {% if chance_chart %}{{ chance_columns(chance_chart, 'Win chance, game by game', team) }}{% endif %}
+</section>
+{% endif %}
+{% if coming %}
+<section class="day"><h2>Coming up</h2><ul class="matches">{% for g in coming %}{{ game_card(g, current_team=team) }}{% endfor %}</ul></section>
+{% endif %}
+{% if schedule %}
+<section class="day"><h2>Rest of the schedule</h2>
+  <ul class="h2h-list schedule-list">{% for g in schedule %}<li><span class="h2h-date">{{ g.date }}</span><a class="team-link" href="{{ cbb_team_url(g.opponent) }}">{{ g.venue }} <strong>{{ g.opponent }}</strong></a>{% if g.kickoff %}<span class="muted">{{ g.kickoff }}</span>{% endif %}</li>{% endfor %}</ul>
+  <p class="note">Forecasts appear up to eight days before each game.</p>
+</section>
+{% endif %}
+{% if played %}
+<section class="day"><h2>Games, most recent first</h2><ul class="matches">{% for g in played %}{{ game_card(g, current_team=team) }}{% endfor %}</ul></section>
+{% endif %}
+{% endblock %}

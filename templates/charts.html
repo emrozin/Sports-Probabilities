@@ -24,7 +24,7 @@
 {% endmacro %}
 
 {% macro chance_columns(bars, title, team, noun='game') %}
-<figure class="chart chart-bars">
+<figure class="chart chart-bars{% if bars|length > 24 %} dense{% endif %}">
   <figcaption class="chart-title">{{ title }}</figcaption>
   <div class="chart-body">
     <div class="chart-y" aria-hidden="true">
@@ -44,6 +44,29 @@
       {% for b in bars %}<span class="col-letter col-letter-{{ b.outcome }}">{{ b.outcome }}</span>{% endfor %}
     </div>
   </div>
-  <p class="chart-unit">Bar height: the model's chance of {{ team }} winning, before each {{ noun }}. Full color: won; outline: didn't win.</p>
+  <p class="chart-unit">Bar height: the model's chance of {{ team }} winning, before each {{ noun }}. Full color: won; outline: didn't win.{% if bars|length > 24 %} Hover over a bar for the {{ noun }}.{% endif %}</p>
+</figure>
+{% endmacro %}
+
+{# The running track record: model vs a benchmark, cumulative, week by week. #}
+{% macro record_line(chart, title) %}
+<figure class="chart chart-line chart-record">
+  <figcaption class="chart-title">{{ title }}</figcaption>
+  <p class="chart-legend"><span class="legend-model">Model</span> <span class="legend-bench">{{ chart.benchmark[:1]|upper }}{{ chart.benchmark[1:] }}</span></p>
+  <div class="chart-body">
+    <div class="chart-y" aria-hidden="true">{% for t in chart.ticks %}<span style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}</div>
+    <div class="chart-plot">
+      {% for t in chart.ticks %}<span class="grid" style="top: {{ t.y }}%"></span>{% endfor %}
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <path class="path-bench" d="{{ chart.bench_path }}"/>
+        <path class="path-model" d="{{ chart.model_path }}"/>
+      </svg>
+      {% for p in chart.points %}
+      <span class="pt pt-model{% if loop.last %} pt-last{% endif %}" style="left: {{ p.x }}%; top: {{ p.ym }}%" tabindex="0" data-tip="{{ p.tip }}" aria-label="{{ p.tip }}"></span>
+      {% endfor %}
+    </div>
+    <div class="chart-x" aria-hidden="true">{% for p in chart.labels %}<span style="left: {{ p.x }}%">{{ p.label }}</span>{% endfor %}</div>
+  </div>
+  <p class="chart-unit">The typical probability each gave the actual result, over all games so far ({{ chart.last.games }}): higher is better. Model {{ "%.1f"|format(chart.last.model) }}%, {{ chart.benchmark }} {{ "%.1f"|format(chart.last.benchmark) }}%. Early on, a few games swing it a lot.</p>
 </figure>
 {% endmacro %}

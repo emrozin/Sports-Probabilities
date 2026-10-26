@@ -113,7 +113,7 @@
     <tbody>
       {% for p in props %}
       <tr>
-        <th scope="row">{{ p.name }} <span class="muted">{{ p.position }}, {{ p.team }}</span></th>
+        <th scope="row">{{ p.name }} <span class="muted">{% if p.position %}{{ p.position }}, {% endif %}{{ p.team }}</span></th>
         <td>{{ p.prop }}</td>
         {% if show_game %}<td><a href="{{ p.url }}">{{ p.matchup }}</a></td>{% endif %}
         <td class="num"><strong>{{ p.chance }}</strong></td>

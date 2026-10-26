@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "cbb/macros.html" import conference_filter %}
+{% block title %}Standings | College basketball probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>{% if is_current %}Standings{% else %}{{ season }} standings{% endif %}</h1>
+  {% if groups or conferences %}
+  <p class="lede">Every Division I team by conference, ordered by conference record{% if is_current %}, with the model's current rating{% endif %}.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>Conference records count regular-season conference games; overall records include conference tournaments and the postseason. Order within a conference is by conference record, then overall record; conferences' own tiebreakers aren't applied. Points are per game. "Rating" is the model's points per game better or worse than an average Division I team.</p>
+  </details>
+  <div class="season-picker"><label for="season">Season</label>
+    <select id="season" onchange="window.location.href = this.value">{% for s in seasons %}<option value="{{ s.url }}" {% if s.selected %}selected{% endif %}>{{ s.label }}</option>{% endfor %}</select>
+  </div>
+  {% endif %}
+</div>
+{% if conferences %}{{ conference_filter(conferences, conference, base_url) }}{% endif %}
+{% if groups %}
+<div class="standings-grid">
+  {% for g in groups %}
+  <section class="division">
+    <h2>{{ g.label }}</h2>
+    <div class="table-wrap">
+      <table class="league nfl-standings">
+        <thead><tr><th scope="col">Team</th>{% if g.conference_games %}<th scope="col" class="num">Conf</th>{% endif %}<th scope="col" class="num">Overall</th><th scope="col" class="num wide-only">PF/g</th><th scope="col" class="num wide-only">PA/g</th><th scope="col" class="num">Diff</th>{% if is_current %}<th scope="col" class="num">Rating</th>{% endif %}</tr></thead>
+        <tbody>
+          {% for r in g.rows %}
+          <tr><th scope="row">{{ cbb_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
+            {% if g.conference_games %}<td class="num"><strong>{{ r.conf }}</strong></td>{% endif %}<td class="num">{{ r.record }}</td>
+            <td class="num wide-only">{{ r.pf }}</td><td class="num wide-only">{{ r.pa }}</td><td class="num">{{ r.diff }}</td>
+            {% if is_current %}<td class="num muted">{{ r.rating or '' }}</td>{% endif %}</tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% else %}
+<section class="empty"><h2>No standings yet</h2><p>Run <code>python -m cbb.import_cbb</code> first.</p></section>
+{% endif %}
+{% endblock %}

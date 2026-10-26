@@ -7,6 +7,7 @@ Usage:
 Fits the model on every finished game and predicts the next 8 days' games involving a
 top-division (FBS) team that haven't kicked off. A prediction can be refreshed until kickoff and
 is never changed after it (records/cfb_live_predictions.csv, written only by the automated run).
+Each team is expected to start the quarterback who started its previous game.
 """
 
 import sqlite3
@@ -19,7 +20,7 @@ from db import DB_PATH, SCHEMA_PATH
 from nfl.predict_upcoming import EASTERN, has_started
 
 MODEL_NAME = "cfb_points"
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"   # v2: quarterback ratings (each team's starter from its previous game)
 DAYS_AHEAD = 8
 
 
@@ -37,7 +38,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
     upcoming = games[(games["status"] == "scheduled") & (games["date"] >= today.isoformat())
                      & (games["date"] <= (today + timedelta(days=DAYS_AHEAD)).isoformat())
                      & ((games["home_division"] == "fbs") | (games["away_division"] == "fbs"))]
-    to_predict = [g for g in upcoming.itertuples() if not has_started(g.date, g.kickoff, now)]
+    to_predict = [g for g in upcoming.itertuples()
+                  if not has_started(g.date, g.kickoff if isinstance(g.kickoff, str) else None, now)]   # TBD: no time yet
     if not recording:
         to_predict = [g for g in to_predict if g.id not in recorded]
     if restored:
@@ -51,7 +53,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
     played = games[games["status"] == "final"]
     model = fit(window(played, today.isoformat()), today.isoformat(), int(to_predict[0].season))
     for g in to_predict:
-        p = predict(model, g.home, g.away, bool(g.neutral_site))
+        p = predict(model, g.home, g.away, bool(g.neutral_site), home_qb=g.home_qb_expected, away_qb=g.away_qb_expected,
+                    home_qb_starts=g.home_qb_expected_starts, away_qb_starts=g.away_qb_expected_starts)
         for outcome, prob in (("home", p["home_win"]), ("away", 1 - p["home_win"])):
             conn.execute("""INSERT INTO predictions (game_id, model_name, model_version, outcome, probability)
                             VALUES (?, ?, ?, ?, ?)

@@ -8,10 +8,14 @@
 # already kicked off, so a late run can't produce an after-kickoff prediction.
 name: Weekly update
 
+# The update now runs twice a day on the Mac (scheduled/install.sh), which commits nothing by
+# itself: its records/ changes are committed with GitHub Desktop. The schedule below is switched
+# off so the two don't both write records/ (and the full run, NBA backtest included, no longer fits
+# in this job's time limit). The "Run workflow" button still works for a one-off run.
 on:
-  schedule:
-    - cron: "0 17 * * 2,5"   # Tuesdays and Fridays at 17:00 UTC (6pm UK, 1pm Eastern)
-    - cron: "0 21 * * 2,5"   # and again at 21:00 UTC (10pm UK, 5pm Eastern)
+  # schedule:
+  #   - cron: "0 17 * * 2,5"   # Tuesdays and Fridays at 17:00 UTC (6pm UK, 1pm Eastern)
+  #   - cron: "0 21 * * 2,5"   # and again at 21:00 UTC (10pm UK, 5pm Eastern)
   workflow_dispatch:          # adds a "Run workflow" button in the Actions tab
 
 permissions:
