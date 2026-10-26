@@ -26,6 +26,7 @@ from epl.model import (TRAINING_YEARS, add_scores, fit_poisson, goal_markets, lo
 from epl.predict_upcoming import MODEL_NAME, MODEL_VERSION
 from epl.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
 from epl.simulate import remaining_fixtures, simulate_season
+import betting
 import blend
 from epl import blend as epl_blend
 from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
@@ -681,8 +682,11 @@ def match_page(request: Request, match_date: str, slug: str):
             "market_over": card.get("market_over"),
         }
 
+    with connect() as conn:
+        moved = betting.movement_chart(conn, int(m.id), m.home, m.away)
     return templates.TemplateResponse(request, "match.html", {
         "active": None,
+        "moved": moved,
         "m": card,
         "finished": finished,
         "date": day_label(match_date),

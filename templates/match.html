@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "macros.html" import split_bar, team_link, outcome_badge %}
+{% from "charts.html" import movement_line %}
 {% block title %}{{ m.home }} v {{ m.away }} | Premier League probabilities{% endblock %}
 {% block main_style %} class="teamed" style="{{ epl_colors(m.home, m.away) }}"{% endblock %}
 
@@ -41,6 +42,8 @@
   <p class="section-note">There's no model forecast for this match: one of the teams had no recent Premier League matches to rate it on.</p>
 </section>
 {% endif %}
+
+{% if moved %}{{ movement_line(moved, finished) }}{% endif %}
 
 {% if goals %}
 <section class="detail-section">

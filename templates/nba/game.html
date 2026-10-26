@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 {% from "nba/macros.html" import game_card %}
 {% from "nfl/macros.html" import props_table %}
+{% from "why.html" import why_section %}
+{% from "charts.html" import movement_line %}
 {% block title %}{{ g.away }} at {{ g.home }} | NBA probabilities{% endblock %}
 {% block content %}
 <div class="intro">
@@ -8,6 +10,8 @@
   <h1>{{ g.away }} {{ 'vs' if g.neutral else 'at' }} {{ g.home }}</h1>
 </div>
 <ul class="matches single">{{ game_card(g) }}</ul>
+{{ why_section(why, nba_colors(g.home, g.away)) }}
+{% if moved %}{{ movement_line(moved, finished) }}{% endif %}
 {% if props %}
 <section class="game-section">
   <h2>Likeliest player props</h2>

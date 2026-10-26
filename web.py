@@ -88,3 +88,32 @@ def typical_probability(log_loss: float) -> str:
 
 
 templates.env.globals["signed_number"] = signed_number
+
+
+def why(parts: list[dict], home: str, away: str, home_win: float, market_home: float | None = None,
+        notes: list[str] | None = None) -> dict | None:
+    """'Why this pick': the predicted home margin split into its parts, for a diverging bar chart.
+    parts: [{"label", "value" (points, + toward the home team), "note" (optional)}]. home_win: the
+    model's home win chance as shown on the page; market_home: the market's, if known."""
+    parts = [p for p in parts if p is not None]
+    if not parts:
+        return None
+    margin = sum(p["value"] for p in parts)
+    biggest = max([abs(p["value"]) for p in parts] + [abs(margin), 0.5])
+    fav_home = home_win >= 0.5
+    fav = home if fav_home else away
+    rows = [{"label": p["label"], "note": p.get("note", ""), "team": home if p["value"] > 0 else away,
+             "points": f"{abs(p['value']):.1f}", "home": p["value"] > 0, "zero": abs(p["value"]) < 0.05,
+             "width": f"{abs(p['value']) / biggest * 100:.0f}%"} for p in parts]
+    total = {"label": "Expected margin", "team": home if margin > 0 else away, "points": f"{abs(margin):.1f}",
+             "home": margin > 0, "zero": abs(margin) < 0.05, "width": f"{abs(margin) / biggest * 100:.0f}%"}
+    out = {"rows": rows, "total": total, "home": home, "away": away, "favorite": fav,
+           "chance": f"{max(home_win, 1 - home_win) * 100:.0f}%", "margin": f"{abs(margin):.1f}",
+           "notes": notes or [], "market": None, "gap": None}
+    if market_home is not None and not math.isnan(market_home):
+        q = market_home if fav_home else 1 - market_home
+        out["market"] = f"{q * 100:.0f}%"
+        gap = (max(home_win, 1 - home_win) - q) * 100
+        if abs(gap) >= 10:
+            out["gap"] = f"{abs(gap):.0f}"
+    return out

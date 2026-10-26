@@ -20,7 +20,7 @@ from nba.model import fit, load_games, load_players, predict
 from nfl.predict_upcoming import EASTERN, has_started
 
 MODEL_NAME = "nba_players"
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"     # v2: back-to-backs
 DAYS_AHEAD = 8
 
 
@@ -56,7 +56,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
     for g in to_predict:
         home = live.expected_lineup(g.home, latest, rosters, out, g.date)
         away = live.expected_lineup(g.away, latest, rosters, out, g.date)
-        p = predict(model, g.home, g.away, home, away, bool(g.neutral_site))
+        p = predict(model, g.home, g.away, home, away, bool(g.neutral_site),
+                    home_b2b=int(g.home_b2b), away_b2b=int(g.away_b2b))
         for outcome, prob in (("home", p["home_win"]), ("away", 1 - p["home_win"])):
             conn.execute("""INSERT INTO predictions (game_id, model_name, model_version, outcome, probability)
                             VALUES (?, ?, ?, ?, ?)

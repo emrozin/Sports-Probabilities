@@ -7,6 +7,11 @@ if launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1; then
 else
   echo "The automatic update is not installed: zsh scheduled/install.sh"
 fi
+if launchctl print "gui/$(id -u)/com.sportsprobabilities.late" >/dev/null 2>&1; then
+  echo "The late NBA news run is installed (6:37 pm daily)."
+else
+  echo "The late NBA news run is not installed: zsh scheduled/install.sh"
+fi
 if [ -f logs/update.log ]; then
   echo
   echo "Last runs:"

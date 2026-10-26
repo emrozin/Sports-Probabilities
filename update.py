@@ -4,6 +4,8 @@ Usage:
     python update.py            # update data and predictions
     python update.py --build    # ...and rebuild the static site in docs/
     python update.py --record   # ...and update the official prediction records (the automated run uses this)
+    python update.py --late     # only the steps that use late news: NBA injury report and predictions,
+                                # ESPN's lines and the bet log (the 6:37 pm run, before most tip-offs)
 
 Premier League (epl/):
     1. import_epl          new results, stats and odds from football-data.co.uk
@@ -49,8 +51,10 @@ failed step stops that sport's remaining steps (they depend on it), but the othe
 runs, so a problem with one data source never holds up the other. The exit code is 1 if
 anything failed, so the automated run shows it.
 
-The automated run happens on Tuesdays and Fridays: Tuesday covers Thursday night NFL games
-and midweek football; Friday covers the weekend.
+The automated run (scheduled/install.sh) runs the whole update at 10:07 am and 5:37 pm, and the
+late steps at 6:37 pm: the NBA's injury report changes through the afternoon, and lines are slow to
+catch up with late scratches, so the predictions and the bet log should see the news as soon as
+possible.
 """
 
 import os
@@ -97,9 +101,16 @@ SPORTS = {
     ],
     "Betting lines": [
         ("espn", "Lines for NBA and college games (ESPN)"),
-        ("betting", "Suggested bets, logged (betting.py)"),
+        ("betting", "Suggested bets and line movement, logged (betting.py)"),
     ],
 }
+LATE_STEPS = {"Late news": [
+    ("nba.live", "NBA rosters and injury report (ESPN)"),
+    ("nba.predict_upcoming", "NBA predictions for upcoming games"),
+    ("nba.predict_players", "NBA player projections"),
+    ("espn", "Lines for NBA and college games (ESPN)"),
+    ("betting", "Suggested bets and line movement, logged (betting.py)"),
+]}
 RECORDING_STEPS = {"epl.predict_upcoming", "nfl.predict_upcoming", "nfl.predict_players", "nfl.season",
                    "nba.live", "nba.predict_upcoming", "nba.predict_players", "nba.season",
                    "cfb.predict_upcoming", "cfb.conference", "cbb.predict_upcoming", "espn", "betting"}
@@ -126,7 +137,7 @@ def main() -> None:
     started = time.time()
     timings, failed = [], []
 
-    for sport, steps in SPORTS.items():
+    for sport, steps in (LATE_STEPS if "--late" in args else SPORTS).items():
         print(f"\n{'=' * 60}\n{sport}")
         for module, label in steps:
             ok, seconds = run(module, label, record if module in RECORDING_STEPS else [])

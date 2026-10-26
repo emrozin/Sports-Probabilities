@@ -1,0 +1,21 @@
+{# "Why this pick": the predicted margin split into its parts (web.why). #}
+{% macro why_section(w, style="", unit="points") %}
+{% if w %}
+<section class="game-section why" style="{{ style }}">
+  <h2>Why the model picks {{ w.favorite }}</h2>
+  <p class="section-note">The model expects {{ w.favorite }} to win by about {{ w.margin }} {{ unit }}, a {{ w.chance }} chance{% if w.market %}; the betting market gives them {{ w.market }}{% endif %}. Here's where that comes from. Each bar is {{ unit }} toward one team: {{ w.away }} to the left, {{ w.home }} to the right.</p>
+  <div class="why-chart" role="table" aria-label="Parts of the expected margin">
+    <div class="why-row why-head" role="row"><span role="columnheader">Part</span><span class="why-side away" role="columnheader">{{ w.away }}</span><span class="why-side home" role="columnheader">{{ w.home }}</span></div>
+    {% for r in w.rows + [w.total] %}
+    <div class="why-row{% if loop.last %} why-total{% endif %}" role="row">
+      <span class="why-label" role="rowheader">{{ r.label }}{% if r.note %}<span class="muted small block">{{ r.note }}</span>{% endif %}</span>
+      <span class="why-bar away" role="cell">{% if not r.home and not r.zero %}<span class="why-value">{{ r.points }}</span><span class="why-fill" style="width: {{ r.width }}"></span>{% endif %}</span>
+      <span class="why-bar home" role="cell">{% if r.home and not r.zero %}<span class="why-fill" style="width: {{ r.width }}"></span><span class="why-value">{{ r.points }}</span>{% endif %}{% if r.zero %}<span class="why-value muted">0</span>{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% for n in w.notes %}<p class="note">{{ n }}</p>{% endfor %}
+  {% if w.gap %}<p class="note why-gap">The model and the market are {{ w.gap }} points apart. A gap that big usually means the model is missing something (a late scratch, a trade, a coach resting players), not that the market is wrong: in past seasons the biggest disagreements were the model's worst bets.</p>{% endif %}
+</section>
+{% endif %}
+{% endmacro %}

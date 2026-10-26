@@ -84,3 +84,51 @@ def record_chart(weeks: list[dict], benchmark: str) -> dict | None:
             "model_path": "M " + " L ".join(f"{p['x']} {p['ym']}" for p in points),
             "bench_path": "M " + " L ".join(f"{p['x']} {p['yb']}" for p in points),
             "last": points[-1]}
+
+
+def movement_chart(snaps, home: str, away: str) -> dict | None:
+    """How the market's (and the model's) chance for one team moved before a game. snaps: rows with
+    taken_at ('open' or 'YYYY-MM-DD HH:MM'), market_home, model_home, oldest first. The team shown is
+    the one the latest model (or market) favours. None with fewer than two market snapshots."""
+    snaps = [s for s in snaps if s.get("market_home") is not None and not math.isnan(s["market_home"])]
+    if len(snaps) < 2:
+        return None
+    last = snaps[-1]
+    ref = last["model_home"] if last.get("model_home") is not None and not math.isnan(last["model_home"]) else last["market_home"]
+    home_side = ref >= 0.5
+    team = home if home_side else away
+    side = (lambda v: v * 100) if home_side else (lambda v: (1 - v) * 100)
+    points = []
+    for s in snaps:
+        model = s.get("model_home")
+        model = None if model is None or math.isnan(model) else side(model)
+        if s["taken_at"] == "open":
+            label = "Open"
+        else:
+            from datetime import datetime
+            t = datetime.strptime(s["taken_at"], "%Y-%m-%d %H:%M")
+            label = f"{t:%b} {t.day}, {t:%-I:%M %p}".replace(":00 ", " ")
+        points.append({"label": label, "market": side(s["market_home"]), "model": model})
+    values = [p["market"] for p in points] + [p["model"] for p in points if p["model"] is not None]
+    low, high = math.floor(min(values) / 5) * 5 - 5, math.ceil(max(values) / 5) * 5 + 5
+    low, high = max(low, 0), min(high, 100)
+    n = len(points)
+    y = lambda v: round((high - v) / (high - low) * 100, 2)
+    for i, p in enumerate(points):
+        p["x"] = round(i / (n - 1) * 100, 2)
+        p["ym"] = y(p["market"])
+        p["yb"] = y(p["model"]) if p["model"] is not None else None
+        p["tip"] = (f"{p['label']}: market {p['market']:.0f}%" + (f", model {p['model']:.0f}%" if p["model"] is not None else ""))
+    step = 5 if high - low <= 30 else 10
+    ticks = [{"label": f"{v:g}%", "y": y(v)} for v in np.arange(math.ceil(low / step) * step, high + 0.01, step)]
+    modelled = [p for p in points if p["yb"] is not None]
+    every = max(1, math.ceil(n / 5))
+    first, end = points[0]["market"], points[-1]["market"]
+    possessive = f"{team}'" if team.endswith("s") else f"{team}'s"
+    return {"team": team, "possessive": possessive, "points": points, "ticks": ticks,
+            "labels": [p for i, p in enumerate(points) if i % every == 0 or i == n - 1],
+            "market_path": "M " + " L ".join(f"{p['x']} {p['ym']}" for p in points),
+            "model_path": ("M " + " L ".join(f"{p['x']} {p['yb']}" for p in modelled)) if len(modelled) > 1 else None,
+            "model_last": modelled[-1] if modelled else None,
+            "first": f"{first:.0f}%", "now": f"{end:.0f}%", "change": end - first,
+            "toward_model": (modelled[-1]["model"] - first) * (end - first) > 0 if modelled and abs(end - first) >= 1 else None}

@@ -19,6 +19,10 @@ are filled in order of usual minutes (the end of the bench gets what's left). Th
 the same with each game's box score: every player available for it (he played, or sat by the
 coach's decision), with his usual minutes before it.
 
+A team playing the second night of a back-to-back is worse: a fitted term for the difference
+in back-to-backs (one side's minus the other's) is part of the margin. Who sits out to rest is
+already handled by availability.
+
 Points (for the expected score and total) come from the team offense/defense model used for
 college basketball (cfb/model.py's fit); the margin above splits that total between the teams.
 """
@@ -40,6 +44,7 @@ TRAINING_YEARS = 3
 MARGIN_SD = 11.0
 MINUTES_HALF_LIFE = 8       # games: how fast expected minutes follow a player's recent role
 DEBUT_MINUTES = 12.0        # expected minutes for a player with no NBA games yet
+REST_SHRINKAGE = 5.0        # pulls the back-to-back effect toward zero
 POINTS = {"half_life_days": 120, "season_weight": 0.5, "shrinkage": 2.0}   # the team points model
 
 
@@ -58,6 +63,23 @@ def load_games(conn) -> pd.DataFrame:
         ORDER BY g.date, g.kickoff, g.id
     """, conn)
     games["week"] = pd.to_datetime(games["date"]).dt.to_period("W-SUN").dt.start_time.dt.strftime("%Y-%m-%d")
+    return add_rest(games)
+
+
+def add_rest(games: pd.DataFrame) -> pd.DataFrame:
+    """home_rest / away_rest: days since the team's previous game (NaN for its first of the
+    season); home_b2b / away_b2b: 1 on the second night of a back-to-back. The schedule is known in
+    advance, so scheduled games count too."""
+    games = games.copy()
+    sides = pd.concat([games[["id", "season", "date", "home"]].rename(columns={"home": "team"}).assign(side="home"),
+                       games[["id", "season", "date", "away"]].rename(columns={"away": "team"}).assign(side="away")])
+    sides["day"] = pd.to_datetime(sides["date"])
+    sides = sides.sort_values(["team", "day", "id"])
+    sides["rest"] = (sides["day"] - sides.groupby(["team", "season"])["day"].shift(1)).dt.days
+    for side in ("home", "away"):
+        part = sides[sides["side"] == side].set_index("id")["rest"]
+        games[f"{side}_rest"] = games["id"].map(part)
+        games[f"{side}_b2b"] = (games[f"{side}_rest"] == 1).astype(int)
     return games
 
 
@@ -128,16 +150,18 @@ def floor_shares(minutes: pd.Series, team_key: pd.Series) -> pd.Series:
 
 def fit(games: pd.DataFrame, players: pd.DataFrame, as_of: str, season: int | None = None,
         half_life_days=HALF_LIFE_DAYS, season_weight=SEASON_WEIGHT, player_shrinkage=PLAYER_SHRINKAGE,
-        team_shrinkage=TEAM_SHRINKAGE, training_years=TRAINING_YEARS, with_points: bool = True) -> dict:
-    """Player ratings, team terms and home court from finished games before as_of (plus the team
-    points model, for expected scores). games/players: everything; this picks the window."""
+        team_shrinkage=TEAM_SHRINKAGE, training_years=TRAINING_YEARS, with_points: bool = True,
+        rest_shrinkage=REST_SHRINKAGE) -> dict:
+    """Player ratings, team terms, home court and the back-to-back effect from finished games
+    before as_of (plus the team points model, for expected scores). games/players: everything; this
+    picks the window. rest_shrinkage None: no back-to-back term."""
     start = (pd.Timestamp(as_of) - pd.DateOffset(years=training_years)).strftime("%Y-%m-%d")
     train = games[(games["status"] == "final") & (games["date"] >= start) & (games["date"] < as_of)]
     lines = players[players["game_id"].isin(train["id"]) & (players["minutes"] > 0)]
     train = train[train["id"].isin(lines["game_id"])]          # games with a box score
     season = season if season is not None else int(train["season"].max()) if len(train) else 0
     if train.empty:
-        return {"ratings": pd.Series(dtype=float), "teams": pd.Series(dtype=float), "home_adv": 2.5,
+        return {"ratings": pd.Series(dtype=float), "teams": pd.Series(dtype=float), "home_adv": 2.5, "b2b": 0.0,
                 "points": None, "as_of": as_of, "season": season}
 
     row = {g: i for i, g in enumerate(train["id"])}
@@ -145,15 +169,22 @@ def fit(games: pd.DataFrame, players: pd.DataFrame, as_of: str, season: int | No
     teams = sorted(set(train["home"]) | set(train["away"]))
     p_col = {p: i for i, p in enumerate(player_ids)}
     t_col = {t: len(player_ids) + i for i, t in enumerate(teams)}
-    width = len(player_ids) + len(teams) + 1
+    rest = rest_shrinkage is not None and "home_b2b" in train
+    width = len(player_ids) + len(teams) + 1 + int(rest)
+    home_col = len(player_ids) + len(teams)
 
     share = floor_shares(lines["minutes"], lines["game_id"].astype(str) + lines["team"])
     sign = np.where(lines["side"] == "home", 1.0, -1.0)
-    r = np.concatenate([lines["game_id"].map(row).to_numpy(), np.arange(len(train)), np.arange(len(train)), np.arange(len(train))])
+    n = np.arange(len(train))
+    r = np.concatenate([lines["game_id"].map(row).to_numpy(), n, n, n])
     c = np.concatenate([lines["player_id"].map(p_col).to_numpy(), train["home"].map(t_col).to_numpy(),
-                        train["away"].map(t_col).to_numpy(), np.full(len(train), width - 1)])
+                        train["away"].map(t_col).to_numpy(), np.full(len(train), home_col)])
     v = np.concatenate([sign * share.to_numpy(), np.ones(len(train)), -np.ones(len(train)),
                         1.0 - train["neutral_site"].to_numpy(float)])
+    if rest:   # positive when the away team is the one on a back-to-back
+        r = np.concatenate([r, n])
+        c = np.concatenate([c, np.full(len(train), home_col + 1)])
+        v = np.concatenate([v, (train["away_b2b"] - train["home_b2b"]).to_numpy(float)])
     x = sparse.csr_matrix((v, (r, c)), shape=(len(train), width))
     y = (train["home_score"] - train["away_score"]).to_numpy(float)
     days_ago = (pd.Timestamp(as_of) - pd.to_datetime(train["date"])).dt.days.to_numpy()
@@ -161,14 +192,16 @@ def fit(games: pd.DataFrame, players: pd.DataFrame, as_of: str, season: int | No
 
     penalty = np.zeros(width)
     penalty[:len(player_ids)] = player_shrinkage
-    penalty[len(player_ids):-1] = team_shrinkage
+    penalty[len(player_ids):home_col] = team_shrinkage
+    penalty[home_col] = 1e-6
+    if rest:
+        penalty[home_col + 1] = rest_shrinkage
     xtw = x.T.multiply(w).tocsr()
     a = (xtw @ x).toarray() + np.diag(penalty)
-    a[-1, -1] += 1e-6
     beta = linalg.solve(a, xtw @ y, assume_a="pos")
     model = {"ratings": pd.Series(beta[:len(player_ids)], index=player_ids),
-             "teams": pd.Series(beta[len(player_ids):-1], index=teams), "home_adv": float(beta[-1]),
-             "points": None, "as_of": as_of, "season": season}
+             "teams": pd.Series(beta[len(player_ids):home_col], index=teams), "home_adv": float(beta[home_col]),
+             "b2b": float(beta[home_col + 1]) if rest else 0.0, "points": None, "as_of": as_of, "season": season}
     if with_points:
         model["points"] = team_fit(train, as_of, season, qb_shrinkage=None, inexperience_starts=0, **POINTS)
     return model
@@ -185,12 +218,12 @@ def lineup_strength(model: dict, lineup: pd.DataFrame) -> float:
 
 
 def predict(model: dict, home: str, away: str, home_lineup: pd.DataFrame, away_lineup: pd.DataFrame,
-            neutral: bool = False, margin_sd: float = MARGIN_SD) -> dict:
+            neutral: bool = False, margin_sd: float = MARGIN_SD, home_b2b: int = 0, away_b2b: int = 0) -> dict:
     """Win chance, margin and expected points. Lineups: each team's available players with their
-    expected minutes (columns player_id, minutes); an empty lineup counts as an average team."""
-    t = model["teams"]
-    margin = ((0.0 if neutral else model["home_adv"]) + lineup_strength(model, home_lineup) - lineup_strength(model, away_lineup)
-              + float(t.get(home, 0.0)) - float(t.get(away, 0.0)))
+    expected minutes (columns player_id, minutes); an empty lineup counts as an average team.
+    home_b2b / away_b2b: 1 if the team is on the second night of a back-to-back."""
+    parts = breakdown(model, home, away, home_lineup, away_lineup, neutral, home_b2b, away_b2b)
+    margin = sum(parts.values())
     total = 2 * 112.0
     if model.get("points") is not None:
         pts = model["points"]
@@ -201,6 +234,17 @@ def predict(model: dict, home: str, away: str, home_lineup: pd.DataFrame, away_l
         total = home_pts + away_pts
     return {"home_win": float(norm.cdf(margin / margin_sd)), "margin": margin, "total": total,
             "home_points": (total + margin) / 2, "away_points": (total - margin) / 2}
+
+
+def breakdown(model: dict, home: str, away: str, home_lineup: pd.DataFrame, away_lineup: pd.DataFrame,
+              neutral: bool = False, home_b2b: int = 0, away_b2b: int = 0) -> dict:
+    """The predicted home margin, split into its parts (points, + favours the home team): the
+    players expected to play, the team terms, home court and back-to-backs."""
+    t = model["teams"]
+    return {"players": lineup_strength(model, home_lineup) - lineup_strength(model, away_lineup),
+            "team": float(t.get(home, 0.0)) - float(t.get(away, 0.0)),
+            "home_court": 0.0 if neutral else model["home_adv"],
+            "rest": model.get("b2b", 0.0) * (int(away_b2b) - int(home_b2b))}
 
 
 def team_lineups(players: pd.DataFrame, mode: str = "played") -> pd.DataFrame:
@@ -246,7 +290,8 @@ def team_lineups(players: pd.DataFrame, mode: str = "played") -> pd.DataFrame:
 def backtest(games: pd.DataFrame, players: pd.DataFrame, start_season: int, end_season: int | None = None,
              mode: str = "roster_fill", half_life_days=HALF_LIFE_DAYS, season_weight=SEASON_WEIGHT,
              player_shrinkage=PLAYER_SHRINKAGE, team_shrinkage=TEAM_SHRINKAGE, training_years=TRAINING_YEARS,
-             margin_sd=MARGIN_SD, with_points: bool = True, players_only: bool = False) -> pd.DataFrame:
+             margin_sd=MARGIN_SD, with_points: bool = True, players_only: bool = False,
+             rest_shrinkage=REST_SHRINKAGE) -> pd.DataFrame:
     """Walk-forward, a week at a time: fit on games before the week, predict the week's games
     (regular season, play-in and playoffs). mode: see team_lineups. players_only False with mode
     'none': the team terms alone (no player ratings), for comparison."""
@@ -261,12 +306,12 @@ def backtest(games: pd.DataFrame, players: pd.DataFrame, start_season: int, end_
         cutoff = week_games["date"].min()
         model = fit(games, players, cutoff, season, half_life_days, season_weight,
                     player_shrinkage if mode != "none" else 1e9, team_shrinkage if mode != "none" else 1.0,
-                    training_years, with_points)
+                    training_years, with_points, rest_shrinkage)
         if model["ratings"].empty and model["teams"].empty:
             continue
         for g in week_games.itertuples():
             p = predict(model, g.home, g.away, by_game.get((g.id, g.home), empty), by_game.get((g.id, g.away), empty),
-                        bool(g.neutral_site), margin_sd)
+                        bool(g.neutral_site), margin_sd, getattr(g, "home_b2b", 0), getattr(g, "away_b2b", 0))
             rows.append({"id": g.id, "model_home": p["home_win"], "model_margin": p["margin"],
                          "home_points": p["home_points"], "away_points": p["away_points"]})
     return pd.DataFrame(rows)

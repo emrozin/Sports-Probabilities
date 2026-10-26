@@ -1052,3 +1052,38 @@ a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px soli
 @media (max-width: 600px) { .exp-table th[scope="row"] { min-width: 0; } }
 .exp-table tr.kept-row th[scope="row"] { font-weight: 650; }
 .tag-kept { border-color: var(--accent); color: var(--accent); white-space: nowrap; }
+
+/* "Why the model picks ...": diverging bars, away to the left, home to the right */
+.why-chart { display: grid; gap: 0.15rem; margin: 0.75rem 0; }
+.why-row { display: grid; grid-template-columns: minmax(9rem, 1.2fr) 1fr 1fr; align-items: center; gap: 0; padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
+.why-head { font-size: 0.8rem; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); }
+.why-head .why-side.away { text-align: right; padding-right: 0.5rem; }
+.why-head .why-side.home { padding-left: 0.5rem; }
+.why-label { padding-right: 0.75rem; }
+.why-bar { display: flex; align-items: center; gap: 0.35rem; min-height: 1.4rem; }
+.why-bar.away { justify-content: flex-end; border-right: 2px solid var(--muted); padding-right: 0; }
+.why-bar.home { justify-content: flex-start; }
+.why-fill { display: block; height: 0.9rem; border-radius: 2px; min-width: 2px; }
+.why-bar.away .why-fill { background: var(--away); }
+.why-bar.home .why-fill { background: var(--home); }
+.why-bar.away .why-fill { border-radius: 2px 0 0 2px; }
+.why-bar.home .why-fill { border-radius: 0 2px 2px 0; }
+.why-value { font-variant-numeric: tabular-nums; font-size: 0.85rem; white-space: nowrap; }
+.why-total { border-bottom: none; font-weight: 600; }
+.why-total .why-bar .why-fill { background: var(--ink); }
+.why-gap { border-left: 3px solid #b4433a; padding-left: 0.6rem; }
+@media (max-width: 600px) {
+  .why-row { grid-template-columns: 1fr 1fr; row-gap: 0.25rem; font-size: 0.92rem; }
+  .why-label { grid-column: 1 / -1; padding-right: 0; }
+  .why-head span:first-child { display: none; }
+}
+
+/* How the line moved: the market solid, the model dashed */
+.chart-movement .path-bench { stroke: var(--ink); stroke-dasharray: none; stroke-width: 2.5; }
+.chart-movement .path-model { stroke: var(--accent); stroke-dasharray: 5 4; }
+.chart-movement .legend-bench::before { border-top: 3px solid var(--ink); }
+.chart-movement .legend-model::before { border-top: 3px dashed var(--accent); }
+.chart-movement .pt-bench { background: var(--ink); }
+.chart-movement .pt-model { width: 7px; height: 7px; background: var(--accent); }
+@media (max-width: 600px) { .chart-movement .chart-x .x-mid { display: none; } }
+.chart-movement .chart-x span:first-child { transform: none; } .chart-movement .chart-x span:last-child { transform: translateX(-100%); }

@@ -3,7 +3,7 @@ live feeds (rosters, injuries, betting lines), player props, playoff odds and th
 Everything runs on a simulated league; nothing touches the internet."""
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -404,3 +404,62 @@ def test_suggested_bets_are_logged_once_settled_and_shown(nba_project, monkeypat
     assert "Live record" in page, page[page.find("<main"):page.find("<main") + 3000]
     assert "1–0" in page and "NBA:</strong> Not tested yet" in page
     assert TestClient(app.app).get("/today/").status_code == 200
+
+
+# ---------------------------------------------------------------- back-to-backs, why this pick, line movement
+
+def test_back_to_backs_are_found_from_the_schedule():
+    from nba.model import add_rest
+    games = pd.DataFrame({"id": [1, 2, 3, 4], "season": [2025] * 4,
+                          "date": ["2025-11-01", "2025-11-02", "2025-11-05", "2025-11-06"],
+                          "home": ["A", "B", "A", "C"], "away": ["B", "A", "C", "B"]})
+    out = add_rest(games).set_index("id")
+    assert out.at[2, "away_b2b"] == 1 and out.at[2, "home_b2b"] == 1       # A and B both played the day before
+    assert out.at[3, "home_rest"] == 3 and out.at[3, "home_b2b"] == 0
+    assert out.at[4, "home_b2b"] == 1 and out.at[4, "away_b2b"] == 0       # C yes; B last played on the 2nd
+    assert np.isnan(out.at[1, "home_rest"])                                 # first game of the season
+
+
+def test_the_breakdown_adds_up_to_the_prediction(nba_project):
+    from nba.model import breakdown, predict
+    conn = sqlite3.connect(nba_project / "data" / "sports.db")
+    games, lines = load_games(conn), load_players(conn)
+    conn.close()
+    model = fit(games, lines, NOW.date().isoformat(), with_points=False)
+    model["b2b"] = 2.0
+    home = pd.DataFrame({"player_id": lines["player_id"].unique()[:8], "minutes": [30.0] * 8})
+    away = pd.DataFrame({"player_id": lines["player_id"].unique()[9:17], "minutes": [30.0] * 8})
+    parts = breakdown(model, "Club BOS", "Club NY", home, away, home_b2b=1)
+    assert parts["rest"] == pytest.approx(-2.0)                              # the home team is the tired one
+    p = predict(model, "Club BOS", "Club NY", home, away, home_b2b=1)
+    assert p["margin"] == pytest.approx(sum(parts.values()))
+
+
+def test_upcoming_game_pages_explain_the_pick_and_show_line_movement(nba_project, monkeypatch):
+    import app
+    import betting
+    conn = sqlite3.connect(nba_project / "data" / "sports.db")
+    conn.executescript(open("schema.sql").read())
+    gid, game_id = conn.execute("""SELECT i.source_game_id, g.id FROM nba_game_info i JOIN games g ON g.id = i.game_id
+                                   JOIN predictions p ON p.game_id = g.id AND p.model_name = 'nba_players'
+                                   WHERE g.status = 'scheduled' ORDER BY g.date LIMIT 1""").fetchone()
+    line = lambda home: [{"game": gid, "provider": "test", "home_ml_open": 1.8, "away_ml_open": 2.1,
+                          "home_ml": home, "away_ml": 1 / (1.05 - 1 / home), "spread": -2.5, "total": 220.5, "final": 0}]
+    espn.save(conn, "NBA", line(1.9))
+    conn.close()
+    assert betting.main([], now=NOW) is None
+    betting.main([], now=NOW + timedelta(hours=2))          # nothing moved: no new snapshot
+    conn = sqlite3.connect(nba_project / "data" / "sports.db")
+    espn.save(conn, "NBA", line(1.6))                          # the market moves
+    conn.close()
+    betting.main(["--record"], now=NOW + timedelta(hours=4))
+    conn = sqlite3.connect(nba_project / "data" / "sports.db")
+    moves = betting.movement(conn, game_id)
+    conn.close()
+    assert list(moves["taken_at"])[0] == "open" and len(moves) == 3
+    assert moves["market_home"].iloc[2] > moves["market_home"].iloc[1]
+    assert betting.HISTORY_PATH.exists()
+    nba_site._cache.clear()
+    page = TestClient(app.app).get(f"/nba/game/{gid}/").text
+    assert "Why the model picks" in page and "Players expected to play" in page and "Home court" in page
+    assert "How the line moved" in page and "Open" in page

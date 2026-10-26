@@ -14,16 +14,17 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+import betting
 import colors
 import espn
 from cfb.site import kickoff_label, line_text, two_way
 from charts import chance_bars, record_chart
 from nba import live
-from nba.model import MARGIN_SD, elo_benchmark, fit, lineup_strength, load_games, load_players
+from nba.model import MARGIN_SD, breakdown, elo_benchmark, fit, lineup_strength, load_games, load_players
 from nba.players import (PROPS, STAT_NAMES, STATS, add_rates, chance_at_least, likeliest_props, prop_chances)
 from nba.predict_upcoming import MODEL_NAME
 from nba.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
-from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
+from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability, why
 
 DB_PATH = ROOT / "data" / "sports.db"
 router = APIRouter(prefix="/nba")
@@ -38,7 +39,8 @@ DEVELOPMENT: list[tuple[str, str]] = [
     ("A simple Elo rating", "0.6265"),
     ("Team ratings only, no players", "0.6211"),
     ("Players, ignoring who's available (each team's players from its last five games)", "0.6179"),
-    ("Players, knowing who's available, with usual minutes (what the site does)", "0.6135"),
+    ("Players, knowing who's available, with usual minutes", "0.6135"),
+    ("...plus back-to-backs (what the site does)", "0.6124"),
     ("Players with the minutes they really played (an upper bound: not known beforehand)", "0.6086"),
 ]
 
@@ -306,6 +308,41 @@ def props_page(request: Request):
                                           "lines": {STAT_NAMES[s]: ", ".join(f"{x}+" for x in v) for s, v in PROPS.items()}})
 
 
+ABSENCE_MINUTES = 10   # absences worth explaining: players who usually play at least this much
+
+
+def why_pick(g, lineups: dict, cur: dict) -> dict | None:
+    """The predicted margin split into its parts, and what each notable absence costs."""
+    model = cur["model"]
+    playing = {side: lu.loc[~lu["out"], ["player_id", "minutes"]] for side, lu in lineups.items()}
+    neutral = bool(g["neutral_site"])
+    hb, ab = int(g.get("home_b2b", 0) or 0), int(g.get("away_b2b", 0) or 0)
+    parts = breakdown(model, g["home"], g["away"], playing["home"], playing["away"], neutral, hb, ab)
+    notes = {"players": [], "rest": ""}
+    for side in ("away", "home"):
+        lu, team = lineups[side], g[side]
+        base = lineup_strength(model, playing[side])
+        for r in lu[lu["out"] & (lu["usual_minutes"] >= ABSENCE_MINUTES)].head(4).itertuples():
+            back = live.expected_lineup(team, cur["latest"], data()["rosters"], cur["out"] - {r.player_id}, g["date"])
+            cost = lineup_strength(model, back.loc[~back["out"], ["player_id", "minutes"]]) - base
+            if abs(cost) >= 0.5:
+                notes["players"].append(f"{r.name} out ({team} {'−' if cost > 0 else '+'}{abs(cost):.1f})")
+    if hb or ab:
+        tired = [g[s] for s, b in (("home", hb), ("away", ab)) if b]
+        notes["rest"] = f"{' and '.join(tired)} played yesterday"
+    rows = [{"label": "Players expected to play", "value": parts["players"],
+             "note": "Includes: " + "; ".join(notes["players"]) if notes["players"] else "Ratings of each side's available players, weighted by minutes"},
+            {"label": "Team beyond its players", "value": parts["team"], "note": "Coaching, system, fit"},
+            {"label": "Home court", "value": parts["home_court"], "note": "Neutral site" if neutral else ""}]
+    if hb or ab:
+        rows.append({"label": "Back-to-back", "value": parts["rest"], "note": notes["rest"]})
+    home_win = g["model_home"] if pd.notna(g.get("model_home")) else None
+    if home_win is None:
+        return None
+    return why(rows, g["home"], g["away"], float(home_win), g.get("market_home"),
+               ["The saved prediction may differ slightly from these parts if the injury report changed since it was made."])
+
+
 @router.get("/game/{source_id}/", response_class=HTMLResponse)
 def game_page(request: Request, source_id: str):
     d = data()
@@ -320,6 +357,7 @@ def game_page(request: Request, source_id: str):
     proj = proj[proj["game_id"] == g["id"]].set_index("player_id") if not proj.empty else pd.DataFrame()
     cur = current()
     sides = []
+    lineups = {}
     for side in ("away", "home"):
         team = g[side]
         rows = []
@@ -334,6 +372,7 @@ def game_page(request: Request, source_id: str):
         else:
             lineup = (live.expected_lineup(team, cur["latest"], d["rosters"], cur["out"], g["date"])
                       if cur else pd.DataFrame(columns=["player_id", "name", "minutes", "out"]))
+            lineups[side] = lineup
             for r in lineup[~lineup["out"]].itertuples():
                 p = proj.loc[r.player_id] if r.player_id in proj.index else None
                 if p is None and r.minutes < 1:
@@ -345,7 +384,10 @@ def game_page(request: Request, source_id: str):
             outs = injury_notes(team)
         sides.append({"team": team, "rows": rows, "out": outs})
     props = prop_rows(proj.reset_index().assign(game_id=g["id"]), games, "game_id", PROPS_PER_GAME) if not proj.empty else []
-    return render(request, "game.html", {"active": None, "g": card, "date": day_label(g["date"], with_year=True),
+    reasons = why_pick(g, lineups, cur) if g["status"] != "final" and cur and len(lineups) == 2 else None
+    with connect() as conn:
+        moved = betting.movement_chart(conn, int(g["id"]), g["home"], g["away"])
+    return render(request, "game.html", {"active": None, "g": card, "date": day_label(g["date"], with_year=True), "why": reasons, "moved": moved,
                                          "sides": sides, "props": props, "finished": g["status"] == "final",
                                          "props_per_game": PROPS_PER_GAME})
 

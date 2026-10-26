@@ -70,3 +70,30 @@
   <p class="chart-unit">The typical probability each gave the actual result, over all games so far ({{ chart.last.games }}): higher is better. Model {{ "%.1f"|format(chart.last.model) }}%, {{ chart.benchmark }} {{ "%.1f"|format(chart.last.benchmark) }}%. Early on, a few games swing it a lot.</p>
 </figure>
 {% endmacro %}
+
+{# How the market moved before a game (charts.movement_chart): the market's chance for one team over time, and the model's. #}
+{% macro movement_line(chart, finished=False) %}
+<section class="game-section movement">
+  <h2>How the line moved</h2>
+  <figure class="chart chart-line chart-record chart-movement">
+    <figcaption class="chart-title">{{ chart.possessive }} chance to win, before the game</figcaption>
+    <p class="chart-legend"><span class="legend-bench">Betting market</span>{% if chart.model_path or chart.model_last %} <span class="legend-model">Model</span>{% endif %}</p>
+    <div class="chart-body">
+      <div class="chart-y" aria-hidden="true">{% for t in chart.ticks %}<span style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}</div>
+      <div class="chart-plot">
+        {% for t in chart.ticks %}<span class="grid" style="top: {{ t.y }}%"></span>{% endfor %}
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          <path class="path-bench" d="{{ chart.market_path }}"/>
+          {% if chart.model_path %}<path class="path-model" d="{{ chart.model_path }}"/>{% endif %}
+        </svg>
+        {% for p in chart.points %}
+        <span class="pt pt-bench{% if loop.last %} pt-last{% endif %}" style="left: {{ p.x }}%; top: {{ p.ym }}%" tabindex="0" data-tip="{{ p.tip }}" aria-label="{{ p.tip }}"></span>
+        {% if p.yb is not none %}<span class="pt pt-model" style="left: {{ p.x }}%; top: {{ p.yb }}%" aria-hidden="true"></span>{% endif %}
+        {% endfor %}
+      </div>
+      <div class="chart-x" aria-hidden="true">{% for p in chart.labels %}<span style="left: {{ p.x }}%"{% if not loop.first and not loop.last %} class="x-mid"{% endif %}>{{ p.label }}</span>{% endfor %}</div>
+    </div>
+    <p class="chart-unit">The market went from {{ chart.first }} to {{ chart.now }}{% if finished %} by the last update before the game{% endif %}{% if chart.toward_model is not none %}, {{ 'in the model\'s direction' if chart.toward_model else 'against the model' }}{% endif %}. Each point is an update where a chance moved; the market's chance has the bookmaker's margin removed. When the market moves toward the model before the game, that's a sign the model saw something real; consistently moving away means the market knew better.</p>
+  </figure>
+</section>
+{% endmacro %}

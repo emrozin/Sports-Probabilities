@@ -18,7 +18,8 @@ from nfl.elo import load_nfl_games
 from nfl.model import HALF_LIFE_DAYS, INEXPERIENCE_STARTS, MARGIN_SD, TRAINING_YEARS, add_qb_changes, fit, qb_value
 from nfl.predict_upcoming import MODEL_NAME
 from nfl.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
-from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
+from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability, why
+import betting
 import blend
 
 DB_PATH = ROOT / "data" / "sports.db"
@@ -793,6 +794,32 @@ def prop_record(picks: pd.DataFrame) -> dict | None:
             "expected": f"{done['chance'].mean() * 100:.0f}%"}
 
 
+def why_pick(g) -> dict | None:
+    """The predicted margin from today's ratings, split into offense, defense, quarterbacks and home
+    field (points, + toward the home team)."""
+    model = cached_model()
+    if model is None or pd.isna(getattr(g, "model_home", np.nan)):
+        return None
+    r = model["ratings"]
+    if g.home not in r.index or g.away not in r.index:
+        return None
+    qb = {side: qb_value(model, getattr(g, f"{side}_qb_expected"), getattr(g, f"{side}_qb_starts")) for side in ("home", "away")}
+    names = {side: getattr(g, f"{side}_qb_expected") for side in ("home", "away")}
+    rows = [{"label": "Offense", "value": r.at[g.home, "offense"] - r.at[g.away, "offense"],
+             "note": "Apart from the quarterback, against the defenses faced"},
+            {"label": "Defense", "value": r.at[g.home, "defense"] - r.at[g.away, "defense"],
+             "note": "Points allowed, against the offenses faced"},
+            {"label": "Quarterbacks", "value": qb["home"] - qb["away"],
+             "note": (f"{names['away']} vs {names['home']}, each against an average starter"
+                      if all(isinstance(n, str) for n in names.values()) else "")},
+            {"label": "Home field", "value": 0.0 if g.neutral_site else model["home_adv"],
+             "note": "Neutral site" if g.neutral_site else ""}]
+    market_home = getattr(g, "mkt_home", np.nan)
+    if pd.isna(market_home):
+        market_home = no_vig(g.home_moneyline, g.away_moneyline)
+    return why(rows, team_name(g.home), team_name(g.away), float(g.model_home), market_home if market_home is not None else None)
+
+
 @router.get("/game/{key}/", response_class=HTMLResponse)
 def game_page(request: Request, key: str):
     d = data()
@@ -814,11 +841,14 @@ def game_page(request: Request, key: str):
                                   and getattr(g, f"{side}_qb_listed") != getattr(g, f"{side}_qb") else None),
                      "starts": None if pd.isna(getattr(g, f"{side}_qb_starts")) else int(getattr(g, f"{side}_qb_starts"))}
               for side in ("away", "home")}
+    reasons = why_pick(g) if not finished else None
+    with connect() as conn:
+        moved = betting.movement_chart(conn, int(g.id), g.home, g.away)
     expected = None
     if pd.notna(getattr(g, "exp_home", np.nan)):
         expected = {"home": f"{g.exp_home:.1f}", "away": f"{g.exp_away:.1f}"}
     return render(request, "game.html", {
-        "active": None, "g": card, "finished": finished, "expected": expected, "qb": qb,
+        "active": None, "g": card, "finished": finished, "expected": expected, "qb": qb, "why": reasons, "moved": moved,
         "date": day_label(g.date), "season": int(g.season), "stadium": g.stadium,
         "home_score": int(g.home_score) if finished else None, "away_score": int(g.away_score) if finished else None,
         "form_home": form(games, g.home, g.date), "form_away": form(games, g.away, g.date),

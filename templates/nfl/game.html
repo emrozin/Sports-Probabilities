@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% from "nfl/macros.html" import props_table, bar, team_link, badge %}
+{% from "why.html" import why_section %}
+{% from "charts.html" import movement_line %}
 {% block title %}{{ nfl_name(g.away) }} at {{ nfl_name(g.home) }} | NFL probabilities{% endblock %}
 {% block main_style %} class="teamed" style="{{ nfl_colors(g.home, g.away) }}"{% endblock %}
 
@@ -50,6 +52,9 @@
   <p class="section-note">There's no model forecast for this game{% if not finished %} yet: predictions are made up to eight days ahead{% endif %}.</p>
 </section>
 {% endif %}
+
+{{ why_section(why) }}
+{% if moved %}{{ movement_line(moved, finished) }}{% endif %}
 
 {% if qb %}
 <section class="detail-section">

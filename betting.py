@@ -22,8 +22,8 @@ game ends. Closing-line value (did the price move toward the model before kickof
 where a closing price is known: Pinnacle's for the Premier League, ESPN's for its sports.
 
 Usage:
-    python -m betting             # log today's suggested bets (after the predictions are made)
-    python -m betting --record    # ...and the public record, records/bets.csv
+    python -m betting             # log today's suggested bets and the lines' movement (after the predictions)
+    python -m betting --record    # ...and the public records, records/bets.csv and records/line_history.csv
     python -m betting --history   # how the rule did on past seasons, per sport
 
 This is a statistics project, not betting advice: the model hasn't been shown to beat the market.
@@ -49,6 +49,8 @@ EPL_PRICE = "Market max"     # the best price across bookmakers (the average if 
 START_BANKROLL = 1000.0
 EDGE_BUCKETS = [0.03, 0.06, 0.10, 0.20, np.inf]
 RECORD_PATH = Path("records/bets.csv")
+HISTORY_PATH = Path("records/line_history.csv")
+MOVE = 0.002                 # a new snapshot only when a chance moved by at least this much
 
 
 def sports() -> dict:
@@ -344,6 +346,123 @@ def logged(conn) -> pd.DataFrame:
     return df.sort_values(["date", "kickoff"])
 
 
+# ---------------------------------------------------------------- line movement
+
+def fair_chances(offered: pd.DataFrame) -> pd.DataFrame:
+    """game_id, home, draw (NaN for two-way), away: the price's chances, margin removed."""
+    if offered.empty:
+        return pd.DataFrame(columns=["game_id", "home", "draw", "away"])
+    implied = 1 / offered["price"]
+    df = offered.assign(q=implied / implied.groupby(offered["game_id"]).transform("sum"))
+    wide = df.pivot_table(index="game_id", columns="outcome", values="q").reset_index()
+    for col in ("home", "draw", "away"):
+        if col not in wide:
+            wide[col] = np.nan
+    return wide[["game_id", "home", "draw", "away"]]
+
+
+def snapshot_lines(conn, now: datetime | None = None) -> int:
+    """Save the market's and the model's current chances for every game that hasn't started, when
+    either moved since the last snapshot (and ESPN's opening line, the first time). Returns rows saved."""
+    from nfl.predict_upcoming import EASTERN, has_started
+    now = now or datetime.now(EASTERN)
+    stamp = now.astimezone(EASTERN).strftime("%Y-%m-%d %H:%M")
+    saved = 0
+    last = pd.read_sql("""SELECT h.* FROM line_history h JOIN (SELECT game_id, MAX(taken_at) AS t FROM line_history
+                          WHERE taken_at != 'open' GROUP BY game_id) m ON m.game_id = h.game_id AND m.t = h.taken_at""",
+                       conn).set_index("game_id")
+    opened = {r[0] for r in conn.execute("SELECT game_id FROM line_history WHERE taken_at = 'open'")}
+    for league, info in sports().items():
+        rows = games(conn, league)
+        upcoming = rows[(rows["status"] == "scheduled") & (rows["date"] >= now.astimezone(EASTERN).date().isoformat())]
+        upcoming = upcoming[[not has_started(g.date, g.kickoff if isinstance(g.kickoff, str) else None, now)
+                             for g in upcoming.itertuples()]]
+        if upcoming.empty:
+            continue
+        market = fair_chances(prices(conn, league)).set_index("game_id")
+        model = model_chances(conn, info["live"]).pivot_table(index="game_id", columns="outcome", values="p")
+        if league in ("NBA", "CBB", "CFB") and _has(conn, "espn_lines"):
+            opens = pd.read_sql("SELECT game_id, home_ml_open, away_ml_open FROM espn_lines WHERE league = ?",
+                                conn, params=(league,)).dropna()
+            for r in opens[opens["game_id"].isin(upcoming["game_id"]) & ~opens["game_id"].isin(opened)].itertuples():
+                h, a = 1 / r.home_ml_open, 1 / r.away_ml_open
+                conn.execute("INSERT OR IGNORE INTO line_history (league, game_id, taken_at, market_home) VALUES (?, ?, 'open', ?)",
+                             (league, int(r.game_id), h / (h + a)))
+                saved += 1
+        for gid in upcoming["game_id"]:
+            mh = float(market.at[gid, "home"]) if gid in market.index else None
+            md = float(market.at[gid, "draw"]) if gid in market.index and pd.notna(market.at[gid, "draw"]) else None
+            ph = float(model.at[gid, "home"]) if gid in model.index and "home" in model and pd.notna(model.at[gid, "home"]) else None
+            pd_ = float(model.at[gid, "draw"]) if gid in model.index and "draw" in model and pd.notna(model.at[gid, "draw"]) else None
+            if mh is None and ph is None:
+                continue
+            if gid in last.index:
+                before = last.loc[gid]
+                moved = lambda new, old: (new is None) != pd.isna(old) or (new is not None and abs(new - old) >= MOVE)
+                if not any(moved(n, o) for n, o in ((mh, before["market_home"]), (md, before["market_draw"]),
+                                                     (ph, before["model_home"]), (pd_, before["model_draw"]))):
+                    continue
+            conn.execute("""INSERT OR REPLACE INTO line_history (league, game_id, taken_at, market_home, market_draw,
+                                                                 model_home, model_draw) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                         (league, int(gid), stamp, mh, md, ph, pd_))
+            saved += 1
+    conn.commit()
+    return saved
+
+
+HISTORY_COLUMNS = ["league", "date", "home", "away", "taken_at", "market_home", "market_draw", "model_home", "model_draw"]
+
+
+def restore_history(conn) -> int:
+    if not HISTORY_PATH.exists():
+        return 0
+    rec = pd.read_csv(HISTORY_PATH)
+    ids = {}
+    for league in rec["league"].unique():
+        g = games(conn, league)
+        ids.update({(league, r.date, r.home, r.away): r.game_id for r in g.itertuples()})
+    rows = [(r.league, int(ids[(r.league, r.date, r.home, r.away)]), r.taken_at,
+             *[None if pd.isna(v) else float(v) for v in (r.market_home, r.market_draw, r.model_home, r.model_draw)])
+            for r in rec.itertuples() if (r.league, r.date, r.home, r.away) in ids]
+    conn.executemany("""INSERT OR IGNORE INTO line_history (league, game_id, taken_at, market_home, market_draw,
+                                                            model_home, model_draw) VALUES (?, ?, ?, ?, ?, ?, ?)""", rows)
+    conn.commit()
+    return len(rows)
+
+
+def export_history(conn) -> None:
+    df = pd.read_sql("""SELECT l.league, g.date, h.name AS home, a.name AS away, l.taken_at, l.market_home, l.market_draw,
+                               l.model_home, l.model_draw
+                        FROM line_history l JOIN games g ON g.id = l.game_id
+                        JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id""", conn)
+    if df.empty:
+        return
+    old = pd.read_csv(HISTORY_PATH) if HISTORY_PATH.exists() else pd.DataFrame(columns=HISTORY_COLUMNS)
+    combined = (pd.concat([old.reindex(columns=HISTORY_COLUMNS), df[HISTORY_COLUMNS]], ignore_index=True)
+                  .drop_duplicates(["league", "date", "home", "away", "taken_at"], keep="last")
+                  .sort_values(["date", "league", "home", "taken_at"]))
+    HISTORY_PATH.parent.mkdir(exist_ok=True)
+    combined.round(4).to_csv(HISTORY_PATH, index=False)
+
+
+def movement(conn, game_id: int) -> pd.DataFrame:
+    """A game's saved snapshots, oldest first (the opening line first)."""
+    if not _has(conn, "line_history"):
+        return pd.DataFrame(columns=["taken_at", "market_home", "market_draw", "model_home", "model_draw"])
+    df = pd.read_sql("SELECT taken_at, market_home, market_draw, model_home, model_draw FROM line_history WHERE game_id = ?",
+                     conn, params=(int(game_id),))
+    return df.sort_values("taken_at", key=lambda t: t.where(t != "open", "0")).reset_index(drop=True)
+
+
+def movement_chart(conn, game_id: int, home: str, away: str) -> dict | None:
+    """The 'How the line moved' chart for a game page (None until there are two snapshots)."""
+    from charts import movement_chart as chart
+    df = movement(conn, game_id)
+    return chart(df.astype(object).where(df.notna(), float("nan")).to_dict("records"), home, away) if len(df) >= 2 else None
+
+
+# ---------------------------------------------------------------- the bet log
+
 def restore(conn) -> int:
     if not RECORD_PATH.exists():
         return 0
@@ -394,11 +513,14 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
         conn.close()
         return
     restore(conn)
+    restore_history(conn)
+    moved = snapshot_lines(conn, now)
     added = record(conn, now)
     if "--record" in argv:
         export(conn)
+        export_history(conn)
     conn.close()
-    print(f"Betting: {added} new suggested bets logged.")
+    print(f"Betting: {added} new suggested bets logged; line movement saved for {moved} games.")
 
 
 if __name__ == "__main__":

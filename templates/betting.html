@@ -16,6 +16,14 @@
   <ul class="verdict-list">{% for sport, v in verdicts.items() %}<li><strong>{{ sport }}:</strong> {{ v.text }}</li>{% endfor %}</ul>
 </section>
 
+<details class="explain read-guide"><summary>How to read this page</summary>
+  <p><strong>The idea.</strong> The model gives each team a chance to win. A bookmaker's price implies a chance too. When the model's chance times the price comes to more than 1, the bet looks profitable <em>if the model is right</em>: that's the "edge". Example: the model gives a team 75.6% at a price of &minus;135 (decimal 1.741): 0.756 &times; 1.741 &minus; 1 = +31.6% expected per $1.</p>
+  <p><strong>Columns.</strong> <em>Price</em>: American odds (&minus;135 = risk $135 to win $100; +150 = risk $100 to win $150). <em>Model</em> and <em>Market</em>: each one's chance for the pick (the market's with the bookmaker's margin removed). <em>Edge</em>: the expected return if the model is right; bets need {{ min_edge }} or more. <em>Rule's stake</em>: the Kelly formula for your bankroll, scaled by the fraction you pick and capped at {{ cap }}. <em>Recommended</em>: what the site actually stands behind, $0 unless the sport's past test made money.</p>
+  <p><strong>Read big edges with suspicion.</strong> A 20-point disagreement with the market usually means the model is missing something (a late scratch, a trade, rest), not that the market is wrong. In past seasons, the bigger the edge, the worse it did.</p>
+  <p><strong>Is it working?</strong> Two numbers to watch in the live record: <em>units</em> (profit with $1 on every bet: noisy, needs hundreds of bets) and <em>closing-line value</em> (did the price move toward the pick before the game: a faster, steadier sign of a real edge). The past-season table's <em>95% range</em> says how far luck alone could move a result; if it's all below 0, the loss isn't bad luck.</p>
+  <p><strong>In one sentence:</strong> the site flags bets where its chances disagree with the odds, sizes them with the Kelly formula, and logs them publicly so they can't be cherry-picked; tested honestly, they lose, because the betting market is more accurate than the model.</p>
+</details>
+
 <section class="today-section">
   <h2>Bets the rule suggests now</h2>
   <form class="bankroll-form" method="get">

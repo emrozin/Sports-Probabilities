@@ -141,6 +141,7 @@ def test_game_page_shows_forecast_form_and_every_earlier_meeting(client, nfl_pro
     assert "Forecast" in page and "Form going into the game" in page
     assert f"{meetings} meeting" in page
     assert "Expected starting quarterbacks" in page
+    assert "Why the model picks" in page and "Quarterbacks" in page and "Home field" in page
 
 
 def test_standings_are_split_into_divisions(client):

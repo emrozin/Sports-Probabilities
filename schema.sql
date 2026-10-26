@@ -431,3 +431,16 @@ CREATE TABLE IF NOT EXISTS bets (
     suggested_at TEXT NOT NULL,
     PRIMARY KEY (league, game_id)
 );
+
+-- How the market (and the model) moved before each game (betting.snapshot_lines): one row per update
+-- when either changed. taken_at 'open' is the sportsbook's opening line, where ESPN gives it.
+CREATE TABLE IF NOT EXISTS line_history (
+    league       TEXT NOT NULL,
+    game_id      INTEGER NOT NULL REFERENCES games(id),
+    taken_at     TEXT NOT NULL,              -- 'YYYY-MM-DD HH:MM' Eastern, or 'open'
+    market_home  REAL,                       -- the market's chances, bookmaker's margin removed
+    market_draw  REAL,
+    model_home   REAL,                       -- the model's chances at that moment
+    model_draw   REAL,
+    PRIMARY KEY (game_id, taken_at)
+);

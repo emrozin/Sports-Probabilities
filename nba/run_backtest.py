@@ -4,8 +4,9 @@ Every week since 2005-06, the model is fitted only on games before that week and
 week's games the way a live prediction does: each team's lineup is every player available for the
 game (he played, or sat by the coach's decision; injured players are what the injury report would
 have ruled out), with his usual minutes. Settings were tuned on 2010-11 to 2013-14
-(nba/tune_model.py), so 2014-15 onward is the honest test: log loss 0.6135 on 15,476 games,
-against 0.6265 for a simple Elo rating (better in all 12 seasons).
+(nba/tune_model.py), so 2014-15 onward is the honest test: log loss 0.6124 on 15,476 games,
+against 0.6265 for a simple Elo rating. Version 2 adds back-to-backs (0.6135 without them; tested
+with python -m nba.rest_test).
 
 The full run takes several minutes, so by default only the seasons not saved yet and the current
 season are (re)done; python -m nba.run_backtest --full redoes everything.
@@ -20,7 +21,7 @@ from db import DB_PATH, SCHEMA_PATH
 from nba.model import backtest, load_games, load_players
 
 BACKTEST_NAME = "nba_players_backtest"
-BACKTEST_VERSION = "v1"
+BACKTEST_VERSION = "v2"   # v2: back-to-backs
 START_SEASON = 2005
 HELD_OUT_FROM = 2014
 

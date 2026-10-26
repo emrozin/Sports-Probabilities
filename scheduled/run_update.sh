@@ -1,11 +1,12 @@
 #!/bin/zsh
 # Runs the whole update (python update.py --record) and adds its output to logs/update.log.
-# Started by the scheduled job (install.sh); can also be run by hand: zsh scheduled/run_update.sh
+# Extra arguments are passed on (--late: only the late-news steps).
+# Started by the scheduled jobs (install.sh); can also be run by hand: zsh scheduled/run_update.sh
 cd "$(dirname "$0")/.." || exit 1
 mkdir -p logs
 {
-  echo "=== $(date '+%Y-%m-%d %H:%M:%S') update started ==="
-  ./.venv/bin/python update.py --record
+  echo "=== $(date '+%Y-%m-%d %H:%M:%S') update started $* ==="
+  ./.venv/bin/python update.py --record "$@"
   code=$?
   echo "=== $(date '+%Y-%m-%d %H:%M:%S') finished (exit code $code: 0 means every step worked) ==="
   echo
