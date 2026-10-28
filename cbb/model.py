@@ -18,6 +18,10 @@ SHRINKAGE = 0.25
 MARGIN_SD = 11.0
 TRAINING_YEARS = 3
 NON_D1 = "Non-Division I"
+# Preseason ratings (version 3; python -m cbb.preseason_test): until 15 December, last season's
+# ratings pulled 35% of the way toward each team's conference average count as 8 games, and the
+# season's own games are added to them. Early-season log loss on the held-out seasons 0.4901 -> 0.4858.
+PRESEASON = {"carry": 0.65, "prior_weight": 8, "switch": "12-15"}
 
 
 def load_games(conn) -> pd.DataFrame:
@@ -42,12 +46,40 @@ def load_games(conn) -> pd.DataFrame:
 
 
 def fit(train: pd.DataFrame, as_of: str, season: int | None = None, half_life_days=HALF_LIFE_DAYS,
-        season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE) -> dict:
-    return _fit(train, as_of, season, half_life_days, season_weight, shrinkage, qb_shrinkage=None, inexperience_starts=0)
+        season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE, prior: pd.DataFrame | None = None, prior_weight: float = 0.0) -> dict:
+    return _fit(train, as_of, season, half_life_days, season_weight, shrinkage, qb_shrinkage=None, inexperience_starts=0,
+                prior=prior, prior_weight=prior_weight)
 
 
 def predict(model: dict, home: str, away: str, neutral: bool = False, margin_sd=MARGIN_SD) -> dict:
     return _predict(model, home, away, neutral, margin_sd)
+
+
+def conference_of(games: pd.DataFrame, season: int) -> pd.Series:
+    """Each Division I team's conference in a season (from its schedule, known in advance)."""
+    part = games[games["season"] == season]
+    sides = pd.concat([part[["home", "home_conference"]].set_axis(["team", "conf"], axis=1),
+                       part[["away", "away_conference"]].set_axis(["team", "conf"], axis=1)]).dropna()
+    return sides.drop_duplicates("team", keep="last").set_index("team")["conf"]
+
+
+def season_prior(games: pd.DataFrame, season: int, carry: float, half_life_days=HALF_LIFE_DAYS,
+                 season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE, training_years=TRAINING_YEARS) -> tuple[pd.DataFrame, dict]:
+    """Preseason ratings for a season: the ratings at its start (fitted on earlier games), with each
+    team pulled (1 - carry) of the way toward its new conference's average. Rosters turn over a lot
+    between seasons, so last season's rating is only partly this season's. (Scaling the pull by
+    how much of last season's minutes return, from player box scores, didn't help on 2010-2017.)
+    Returns (prior, the fit)."""
+    played = games[games["status"] == "final"]
+    start = games.loc[games["season"] == season, "date"].min()
+    train = window(played, start, training_years)
+    model = fit(train, start, season, half_life_days, season_weight, shrinkage)
+    ratings = model["ratings"].copy()
+    conf = ratings.index.map(conference_of(games, season))
+    for col in ("offense", "defense"):
+        mean = ratings[col].groupby(conf).transform("mean")
+        ratings[col] = np.where(pd.isna(conf), ratings[col], carry * ratings[col] + (1 - carry) * mean)
+    return ratings, model
 
 
 def window(played: pd.DataFrame, cutoff: str, training_years=TRAINING_YEARS) -> pd.DataFrame:
@@ -55,11 +87,47 @@ def window(played: pd.DataFrame, cutoff: str, training_years=TRAINING_YEARS) -> 
     return played[(played["date"] >= start) & (played["date"] < cutoff)]
 
 
+def fit_season(games: pd.DataFrame, played: pd.DataFrame, cutoff: str, season: int, priors: dict,
+               carry: float, prior_weight: float, half_life_days=HALF_LIFE_DAYS, season_weight=SEASON_WEIGHT,
+               shrinkage=SHRINKAGE, training_years=TRAINING_YEARS) -> dict:
+    """The preseason-prior version: this season's games only, ratings pulled toward the preseason
+    ratings (worth prior_weight games). priors: a cache, {season: (prior, fit)}."""
+    if season not in priors:
+        priors[season] = season_prior(games, season, carry, half_life_days, season_weight, shrinkage, training_years)
+    prior, start_fit = priors[season]
+    current = played[(played["season"] == season) & (played["date"] < cutoff)]
+    if current.empty:
+        return {**start_fit, "ratings": prior}
+    model = fit(current, cutoff, season, half_life_days, season_weight, shrinkage, prior=prior, prior_weight=prior_weight)
+    missing = prior.index.difference(model["ratings"].index)          # teams that haven't played yet
+    model["ratings"] = pd.concat([model["ratings"], prior.loc[missing]])
+    return model
+
+
+def early_season(as_of: str, switch: str = PRESEASON["switch"]) -> bool:
+    """Before the switch date (and after the summer): preseason ratings still lead."""
+    return "07-01" <= as_of[5:] < switch
+
+
+def current_fit(games: pd.DataFrame, as_of: str, season: int, priors: dict | None = None) -> dict:
+    """The model as live predictions use it on a date: preseason ratings early in the season, the
+    usual fit after. games: every game (played and scheduled)."""
+    played = games[games["status"] == "final"]
+    if early_season(as_of):
+        return fit_season(games, played, as_of, season, priors if priors is not None else {},
+                          PRESEASON["carry"], PRESEASON["prior_weight"])
+    return fit(window(played, as_of), as_of, season)
+
+
 def backtest(games: pd.DataFrame, start_season: int, end_season: int | None = None, half_life_days=HALF_LIFE_DAYS,
              season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE, margin_sd=MARGIN_SD,
-             training_years=TRAINING_YEARS) -> pd.DataFrame:
+             training_years=TRAINING_YEARS, carry: float | None = None, prior_weight: float = 0.0,
+             switch: str | None = None) -> pd.DataFrame:
     """Walk-forward, a week at a time: fit on games before the week, predict the week's games
-    between two Division I teams."""
+    between two Division I teams. carry None: the original method (every game of the last three
+    seasons, by recency); otherwise preseason ratings (season_prior) plus this season's games, until
+    `switch` ('MM-DD'; None: all season), then the original method."""
+    priors: dict = {}
     played = games[games["status"] == "final"]
     test = played[(played["season"] >= start_season) & (played["home"] != NON_D1) & (played["away"] != NON_D1)]
     if end_season is not None:
@@ -67,10 +135,14 @@ def backtest(games: pd.DataFrame, start_season: int, end_season: int | None = No
     rows = []
     for (season, week), week_games in test.groupby(["season", "week"], sort=False):
         cutoff = week_games["date"].min()
-        train = window(played, cutoff, training_years)
-        if train.empty:
-            continue
-        model = fit(train, cutoff, season, half_life_days, season_weight, shrinkage)
+        if carry is not None and (switch is None or cutoff[5:] >= "07-01" and cutoff[5:] < switch):
+            model = fit_season(games, played, cutoff, season, priors, carry, prior_weight, half_life_days,
+                               season_weight, shrinkage, training_years)
+        else:
+            train = window(played, cutoff, training_years)
+            if train.empty:
+                continue
+            model = fit(train, cutoff, season, half_life_days, season_weight, shrinkage)
         for g in week_games.itertuples():
             p = predict(model, g.home, g.away, bool(g.neutral_site), margin_sd)
             rows.append({"id": g.id, "model_home": p["home_win"], "model_margin": p["margin"],

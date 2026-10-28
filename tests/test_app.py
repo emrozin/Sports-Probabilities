@@ -23,7 +23,7 @@ def client(league_db, monkeypatch):
 
 
 def test_every_page_loads(client):
-    for path in ["/", "/results/", "/table/", "/table/2020/", "/team/team-a/", "/team/team-a/all/",
+    for path in ["/premier-league/", "/results/", "/table/", "/table/2020/", "/team/team-a/", "/team/team-a/all/",
                  "/team/team-a/2019/", "/backtest/", "/ratings/"]:
         response = client.get(path)
         assert response.status_code == 200, path
@@ -55,6 +55,20 @@ def test_results_page_highlights_the_winner(client):
     html = client.get("/results/").text
     assert 'is-finished' in html                       # finished matches are drawn as result cards
     assert "side-home winner" in html or "side-home level" in html or "side-home loser" in html
+
+
+def test_premier_league_pages_match_the_other_soccer_pages(client):
+    results = client.get("/results/").text
+    assert 'class="season-picker"' in results and 'class="matches"' in results and "Previous week" not in results
+    for label in ("Table and odds", "Club ratings", "Track record"):
+        assert label in results                          # the same menu as the other soccer competitions
+    assert 'href="/forecast/" ' not in results and 'href="/backtest/" ' not in results   # no longer menu items
+    seasons = [int(v.strip("/").split("/")[-1]) for v in __import__("re").findall(r'option value="(/results/\d+/)"', results)]
+    assert seasons and client.get(f"/results/{min(seasons)}/").status_code == 200
+    old = client.get(f"/results/{min(seasons)}-10-01/", follow_redirects=False)  # an old weekly address
+    assert old.status_code == 301 and old.headers["location"] == f"/results/{min(seasons)}/"
+    table = client.get("/table/").text
+    assert "Favorites for the title" in table and ">Title<" in table and ">Bottom 3<" in table
 
 
 def test_percentages_always_add_up_to_100():

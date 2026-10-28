@@ -42,13 +42,14 @@ SECONDS_BETWEEN_REQUESTS = 3  # be polite to the site
 REQUIRED_MATCH_KEYS = {"id", "isResult", "h", "a", "goals", "xG", "datetime"}
 
 
-def fetch_season(season: int) -> list[dict]:
-    """Return the list of fixtures for one season, using the cache if possible."""
-    cache_file = CACHE_DIR / f"{UNDERSTAT_LEAGUE}_{season}.json"
-    if cache_file.exists() and season != LAST_SEASON:
+def fetch_season(season: int, league: str = UNDERSTAT_LEAGUE, current: int = LAST_SEASON) -> list[dict]:
+    """Return the list of fixtures for one season of a league (Understat's name for it, e.g.
+    'EPL', 'La_liga'), using the cache if possible: finished seasons are downloaded once."""
+    cache_file = CACHE_DIR / f"{league}_{season}.json"
+    if cache_file.exists() and season < current:
         return json.loads(cache_file.read_text())
 
-    url = f"https://understat.com/getLeagueData/{UNDERSTAT_LEAGUE}/{season}"
+    url = f"https://understat.com/getLeagueData/{league}/{season}"
     # This header marks the request as the page's own data request (AJAX);
     # without it the endpoint doesn't return the JSON.
     headers = {**HEADERS, "X-Requested-With": "XMLHttpRequest"}

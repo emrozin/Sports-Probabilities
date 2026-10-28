@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "nfl/macros.html" import game_row %}
-{% from "charts.html" import record_line %}
+{% from "charts.html" import record_line, calibration as calibration_section %}
 {% block title %}Track record | NFL probabilities{% endblock %}
 
 {% block content %}
@@ -32,6 +32,9 @@
   </div>
 </section>
 
+{% if record_chart %}<section class="detail-section">{{ record_line(record_chart, 'The record so far, week by week') }}</section>{% endif %}
+{% if calibration %}{{ calibration_section(calibration) }}{% endif %}
+
 <section class="detail-section">
   <h2>Week by week</h2>
   <div class="table-wrap">
@@ -39,7 +42,6 @@
       <thead><tr><th scope="col">Week</th><th scope="col" class="num">Games</th><th scope="col" class="num">Model</th>
                  <th scope="col" class="num">Market</th><th scope="col" class="num">Favorite won</th></tr></thead>
       <tbody>
-        {% if record_chart %}{{ record_line(record_chart, 'The record so far, week by week') }}{% endif %}
   {% for w in weeks %}
         <tr>
           <th scope="row">{{ w.label }}</th>
@@ -64,8 +66,9 @@
 {% else %}
 <section class="empty">
   <h2>No finished live predictions yet</h2>
-  <p>Forecasts are saved before kickoff on Tuesdays and Fridays, and appear here once the games have been played. <a href="{{ record_url }}">See the prediction file</a>.</p>
+  <p>Forecasts are saved before kickoff (the update runs every morning and evening) and appear here once the games have been played. <a href="{{ record_url }}">See the prediction file</a>.</p>
 </section>
+{% if calibration %}{{ calibration_section(calibration) }}{% endif %}
 {% endif %}
 {% if players %}
 <section class="detail-section">

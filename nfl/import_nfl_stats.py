@@ -5,7 +5,7 @@ Usage:
 
 Source: nflverse's stats releases, one file per season for teams and one for players (passing,
 rushing and receiving numbers, with expected points added), plus the weekly injury reports (from 2009)
-and each player's share of his team's offensive snaps (from 2013). Past seasons are downloaded once and
+and each player's share of his team's offensive and defensive snaps (from 2013). Past seasons are downloaded once and
 cached in data/raw/nfl_stats/; the current season is downloaded again every run. Rows are linked
 to games by nflverse's game id, so run python -m nfl.import_nfl first. Safe to re-run.
 """
@@ -39,7 +39,7 @@ PLAYER_COLUMNS = {"completions": "completions", "attempts": "pass_attempts", "pa
 REQUIRED = {"team": ["game_id", "team", *TEAM_COLUMNS], "player": ["game_id", "team", "player_id",
                                                                     "player_display_name", "position", *PLAYER_COLUMNS],
             "injuries": ["season", "week", "team", "gsis_id", "full_name", "position", "report_status"],
-            "snaps": ["game_id", "team", "player", "position", "offense_snaps", "offense_pct"],
+            "snaps": ["game_id", "team", "player", "position", "offense_snaps", "offense_pct", "defense_snaps", "defense_pct"],
             "rosters": ["season", "week", "team", "gsis_id", "full_name", "position", "status"]}
 TRIMMED = {"rosters"}   # cached with only the columns used (the full files are large)
 
@@ -100,7 +100,7 @@ def name_key(name) -> str:
 
 def store_snaps(conn, df: pd.DataFrame, game_ids: dict) -> int:
     """Write one season's snap counts, matched to player ids by game, team and name."""
-    df = df[df["offense_snaps"].fillna(0) > 0].dropna(subset=["game_id", "team", "player"]).copy()
+    df = df[(df["offense_snaps"].fillna(0) > 0) | (df["defense_snaps"].fillna(0) > 0)].dropna(subset=["game_id", "team", "player"]).copy()
     df["team"] = df["team"].replace(FRANCHISES)
     df["game"] = df["game_id"].map(game_ids)
     df = df.dropna(subset=["game"])
@@ -111,18 +111,25 @@ def store_snaps(conn, df: pd.DataFrame, game_ids: dict) -> int:
         for game, team, pid, name in conn.execute(
                 f"SELECT game_id, team, player_id, name FROM nfl_player_stats WHERE game_id IN ({','.join('?' * len(part))})", part):
             known[(game, team, name_key(name))] = pid
+    num = lambda v, kind: kind(v) if pd.notna(v) else kind(0)
     rows = [(int(r.game), r.team, r.player, r.position, known.get((int(r.game), r.team, name_key(r.player))),
-             int(r.offense_snaps), float(r.offense_pct)) for r in df.itertuples()]
+             num(r.offense_snaps, int), num(r.offense_pct, float), num(r.defense_snaps, int), num(r.defense_pct, float))
+            for r in df.itertuples()]
     conn.executemany("DELETE FROM nfl_snap_counts WHERE game_id = ?", [(g,) for g in games])
-    conn.executemany("INSERT OR REPLACE INTO nfl_snap_counts VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
+    conn.executemany("""INSERT OR REPLACE INTO nfl_snap_counts (game_id, team, name, position, player_id, offense_snaps,
+                        offense_pct, defense_snaps, defense_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""", rows)
     return len(rows)
 
 
 def ensure_columns(conn) -> None:
-    """Databases created before receiving_air_yards was added don't have it yet; add it."""
+    """Databases created before some columns were added don't have them yet; add them."""
     existing = {row[1] for row in conn.execute("PRAGMA table_info(nfl_player_stats)")}
     if "receiving_air_yards" not in existing:
         conn.execute("ALTER TABLE nfl_player_stats ADD COLUMN receiving_air_yards INTEGER")
+    snaps = {row[1] for row in conn.execute("PRAGMA table_info(nfl_snap_counts)")}
+    for col, kind in (("defense_snaps", "INTEGER"), ("defense_pct", "REAL")):
+        if col not in snaps:
+            conn.execute(f"ALTER TABLE nfl_snap_counts ADD COLUMN {col} {kind}")
 
 
 def store(conn, kind: str, df: pd.DataFrame, game_ids: dict) -> int:

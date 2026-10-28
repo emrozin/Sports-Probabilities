@@ -14,9 +14,10 @@ import sqlite3
 from db import DB_PATH, SCHEMA_PATH
 from nfl.elo import load_nfl_games
 from nfl.model import add_qb_changes, backtest
+from nfl.starters import add_to_games, missing_starters
 
 BACKTEST_NAME = "nfl_points_qb_backtest"
-BACKTEST_VERSION = "v2"   # v2: quarterback ratings
+BACKTEST_VERSION = "v3"   # v2: quarterback ratings; v3: missing starters
 START_SEASON = 2010
 HELD_OUT_FROM = 2018  # settings were tuned on 2010-2017; 2018 onward is the honest test
 
@@ -42,6 +43,7 @@ def main() -> None:
     games = add_qb_changes(load_nfl_games(conn))
     if games.empty:
         raise SystemExit("No NFL games found. Run python -m nfl.import_nfl first.")
+    games = add_to_games(games, missing_starters(conn))
     results = backtest(games, START_SEASON)
     save(conn, results)
     conn.close()

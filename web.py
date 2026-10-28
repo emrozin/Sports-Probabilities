@@ -17,13 +17,18 @@ BASE = os.environ.get("SITE_BASE", "").rstrip("/")  # "" locally, the repository
 templates = Jinja2Templates(directory=ROOT / "templates")
 templates.env.globals["base"] = BASE
 # The sport menu in the header: (label, sport code, home page)
-templates.env.globals["sports"] = [("Today", "today", f"{BASE}/today/"), ("Premier League", "epl", f"{BASE}/"), ("NFL", "nfl", f"{BASE}/nfl/"),
+templates.env.globals["sports"] = [("Today", "today", f"{BASE}/"), ("Soccer", "soccer", f"{BASE}/premier-league/"),
+                                   ("NFL", "nfl", f"{BASE}/nfl/"),
                                    ("NBA", "nba", f"{BASE}/nba/"), ("College football", "cfb", f"{BASE}/cfb/"),
                                    ("College basketball", "cbb", f"{BASE}/cbb/"),
                                    ("Betting", "betting", f"{BASE}/betting/")]
 
 # Team colors (colors.py): style="..." strings that set --home/--away (a game) or --team (a team page)
 import colors  # noqa: E402
+from ucl.cups import SWITCH  # noqa: E402
+
+# The Soccer tab's competition switcher (Premier League, Europe's other big leagues, the European cups)
+templates.env.globals["soccer_switch"] = SWITCH
 
 templates.env.globals["nfl_colors"] = lambda home, away: colors.style(colors.NFL, home, away)
 templates.env.globals["epl_colors"] = lambda home, away: colors.style(colors.EPL, home, away)
@@ -61,6 +66,20 @@ def day_label(iso_date: str, with_year: bool = False) -> str:
     if with_year:
         return f"{d:%a} {d.day} {d:%b %Y}"
     return f"{d:%A} {d.day} {d:%B}"
+
+
+def odds_text(p) -> str:
+    """A season chance in a table: '37%', '<1%', '>99%', '✓' when certain, '–' when impossible or unknown
+    (the same everywhere: the Premier League's and the other soccer tables)."""
+    if p is None or pd.isna(p) or p == 0:
+        return "–"
+    if p > 0.9995:
+        return "✓"
+    if p > 0.995:
+        return ">99%"
+    if p < 0.005:
+        return "<1%"
+    return f"{p * 100:.0f}%"
 
 
 def ordinal(n: int) -> str:
@@ -117,3 +136,35 @@ def why(parts: list[dict], home: str, away: str, home_win: float, market_home: f
         if abs(gap) >= 10:
             out["gap"] = f"{abs(gap):.0f}"
     return out
+
+
+def calibration_pairs(df: pd.DataFrame) -> tuple:
+    """(home win chances, home won) for finished, decided games with a prediction."""
+    df = df.dropna(subset=["model_home"])
+    df = df[df["home_score"] != df["away_score"]]
+    return df["model_home"].to_numpy(float), (df["home_score"] > df["away_score"]).to_numpy(float)
+
+
+def disk_cached(folder: Path, name: str, key, make):
+    """make() computed once per key and kept as a file in `folder` (data/cache next to the database),
+    so a page that needs a slow model fit only pays for it once per update: update.py's last step
+    (warm_cache.py) fills these, and every visit after that reads the file. Any problem reading or
+    writing the file just means computing it again."""
+    import pickle
+    path = Path(folder) / f"{name}.pkl"
+    try:
+        if path.exists():
+            stored = pickle.loads(path.read_bytes())
+            if stored.get("key") == key:
+                return stored["value"]
+    except Exception:
+        pass
+    value = make()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_bytes(pickle.dumps({"key": key, "value": value}))
+        tmp.replace(path)
+    except Exception:
+        pass
+    return value

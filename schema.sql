@@ -230,6 +230,8 @@ CREATE TABLE IF NOT EXISTS nfl_snap_counts (
     player_id     TEXT,
     offense_snaps INTEGER,
     offense_pct   REAL,
+    defense_snaps INTEGER,                   -- defensive players too (for missing starters: nfl/starters.py)
+    defense_pct   REAL,
     PRIMARY KEY (game_id, team, name)
 );
 
@@ -443,4 +445,91 @@ CREATE TABLE IF NOT EXISTS line_history (
     model_home   REAL,                       -- the model's chances at that moment
     model_draw   REAL,
     PRIMARY KEY (game_id, taken_at)
+);
+
+-- Soccer games from ESPN for the Champions League model (ucl/import_espn.py): the European cups and
+-- the domestic leagues of the clubs in them, with ESPN's team ids (one id per club everywhere).
+CREATE TABLE IF NOT EXISTS soccer_games (
+    event_id     TEXT PRIMARY KEY,         -- ESPN's game id
+    competition  TEXT NOT NULL,            -- ESPN's league: 'uefa.champions', 'esp.1', ...
+    season       INTEGER,                  -- ESPN's season year (2026 = 2026-27; Norway and Sweden: the calendar year)
+    stage        TEXT,                     -- 'league-phase', 'round-of-16', ... ('2024-25-laliga' for leagues)
+    date         TEXT NOT NULL,            -- US Eastern date, like the other sports
+    kickoff      TEXT,                     -- US Eastern time 'HH:MM'
+    status       TEXT NOT NULL,            -- 'final', 'scheduled', 'other' (postponed, abandoned, ...)
+    neutral      INTEGER,
+    leg          INTEGER,                  -- 1 or 2 in two-legged knockout ties
+    home_id      TEXT NOT NULL,
+    away_id      TEXT NOT NULL,
+    home_score   INTEGER,                  -- after extra time where played
+    away_score   INTEGER,
+    home_pens    INTEGER,                  -- penalty shootout
+    away_pens    INTEGER,
+    country      TEXT,                     -- where it was played
+    extra_time   INTEGER                   -- 1 if it went to extra time (the score includes it)
+);
+CREATE INDEX IF NOT EXISTS soccer_games_date ON soccer_games (date);
+
+CREATE TABLE IF NOT EXISTS soccer_teams (
+    team_id          TEXT PRIMARY KEY,     -- ESPN's team id
+    name             TEXT,
+    short_name       TEXT,
+    abbreviation     TEXT,
+    color            TEXT,                 -- hex without '#', from ESPN
+    alternate_color  TEXT
+);
+
+-- The European cups' games are also in games (leagues 'UCL', 'UEL', 'UECL'), so predictions, records
+-- and the website work as for every other sport.
+DROP TABLE IF EXISTS ucl_teams;                -- replaced by cup_teams (one club can be in several cups)
+DROP TABLE IF EXISTS ucl_game_info;            -- replaced by cup_game_info
+CREATE TABLE IF NOT EXISTS cup_teams (
+    league_id  INTEGER NOT NULL REFERENCES leagues(id),
+    espn_id    TEXT NOT NULL,
+    team_id    INTEGER NOT NULL REFERENCES teams(id),
+    PRIMARY KEY (league_id, espn_id)
+);
+
+CREATE TABLE IF NOT EXISTS cup_game_info (
+    game_id    INTEGER PRIMARY KEY REFERENCES games(id),
+    espn_id    TEXT NOT NULL UNIQUE,
+    stage      TEXT,
+    leg        INTEGER,
+    neutral    INTEGER,
+    home_pens  INTEGER,
+    away_pens  INTEGER,
+    cancelled  INTEGER NOT NULL DEFAULT 0
+);
+
+-- Transfermarkt squad values for the European cups model's clubs (ucl/squad_values.py): the total of
+-- each club's 18 most valuable players on the first of every month.
+-- Expected goals for ESPN's games in the big five leagues, from Understat (ucl/import_understat.py)
+CREATE TABLE IF NOT EXISTS soccer_xg (
+    event_id      TEXT PRIMARY KEY,     -- ESPN's game id (soccer_games)
+    home_xg       REAL NOT NULL,
+    away_xg       REAL NOT NULL,
+    understat_id  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS soccer_squad_values (
+    espn_id    TEXT NOT NULL,
+    month      TEXT NOT NULL,       -- 'YYYY-MM-01'
+    value_eur  REAL NOT NULL,
+    players    INTEGER NOT NULL,
+    PRIMARY KEY (espn_id, month)
+);
+
+-- DraftKings' NBA player prop lines from ESPN (nba/prop_lines.py): the latest before tip-off is the close.
+CREATE TABLE IF NOT EXISTS nba_prop_lines (
+    game         TEXT NOT NULL,          -- ESPN's game id
+    player_id    TEXT NOT NULL,          -- ESPN's athlete id
+    stat         TEXT NOT NULL,          -- 'points', 'rebounds', 'assists', 'threes'
+    line         REAL NOT NULL,          -- e.g. 22.5: over means 23 or more
+    over_price   REAL NOT NULL,          -- decimal
+    under_price  REAL NOT NULL,
+    line_open    REAL,
+    over_open    REAL,
+    under_open   REAL,
+    updated_at   TEXT,
+    PRIMARY KEY (game, player_id, stat)
 );

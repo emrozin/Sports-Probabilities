@@ -15,7 +15,7 @@
   <div class="table-wrap">
     <table class="league today-table">
       <thead><tr><th scope="col">Game</th><th scope="col" class="wide-only">Sport</th><th scope="col">Model's pick</th><th scope="col" class="num">Model</th><th scope="col" class="num">Market</th><th scope="col" class="num">Gap</th></tr></thead>
-      <tbody>{% for g in gaps %}<tr><th scope="row"><a href="{{ g.url }}">{{ g.matchup }}</a> <span class="muted small">{{ g.time }}</span></th><td class="wide-only muted">{{ g.sport }}</td><td>{{ g.pick }}</td><td class="num"><strong>{{ g.model }}</strong></td><td class="num">{{ g.market }}</td><td class="num">{{ g.gap_text }}</td></tr>{% endfor %}</tbody>
+      <tbody data-keep-order>{% for g in gaps %}<tr data-teams="{{ g.teams }}"><th scope="row"><a href="{{ g.url }}">{{ g.matchup }}</a> <span class="muted small">{{ g.time }}</span></th><td class="wide-only muted">{{ g.sport }}</td><td>{{ g.pick }}</td><td class="num"><strong>{{ g.model }}</strong></td><td class="num">{{ g.market }}</td><td class="num">{{ g.gap_text }}</td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </section>
@@ -27,7 +27,7 @@
   <div class="table-wrap">
     <table class="league today-table">
       <thead><tr><th scope="col">Game</th><th scope="col">Bet</th><th scope="col" class="num">Price</th><th scope="col" class="num">Edge</th><th scope="col" class="num">Recommended</th></tr></thead>
-      <tbody>{% for b in bets %}<tr><th scope="row"><a href="{{ b.url }}">{{ b.matchup }}</a> <span class="muted small">{{ b.sport }}, {{ b.time }}</span></th><td>{{ b.pick }}</td><td class="num">{{ b.price }}</td><td class="num">{{ b.edge }}</td><td class="num"><strong>{{ b.recommended }}</strong></td></tr>{% endfor %}</tbody>
+      <tbody>{% for b in bets %}<tr data-teams="{{ b.teams }}"><th scope="row"><a href="{{ b.url }}">{{ b.matchup }}</a> <span class="muted small">{{ b.sport }}, {{ b.time }}</span></th><td>{{ b.pick }}</td><td class="num">{{ b.price }}</td><td class="num">{{ b.edge }}</td><td class="num"><strong>{{ b.recommended }}</strong></td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </section>
@@ -45,7 +45,7 @@
     <div class="table-wrap">
       <table class="league today-table">
         <thead><tr><th scope="col">Game</th><th scope="col" class="num">Time / score</th><th scope="col">Model's pick</th><th scope="col" class="num">Model</th><th scope="col" class="num">Market</th></tr></thead>
-        <tbody>{% for r in grp.rows %}<tr{% if r.finished %} class="is-finished"{% endif %}>
+        <tbody>{% for r in grp.rows %}<tr{% if r.finished %} class="is-finished"{% endif %} data-teams="{{ r.teams }}">
           <th scope="row"><a href="{{ r.url }}">{{ r.matchup }}</a></th>
           <td class="num">{% if r.finished %}<strong>{{ r.score }}</strong>{% elif r.started %}Live{% else %}{{ r.time }}{% endif %}</td>
           <td>{% if r.pick %}<span class="{% if r.pick_won is defined %}{{ 'prop-hit' if r.pick_won else 'prop-miss' }}{% endif %}">{{ r.pick }}</span>{% else %}<span class="muted">No prediction</span>{% endif %}</td>

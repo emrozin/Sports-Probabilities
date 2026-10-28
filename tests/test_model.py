@@ -189,3 +189,30 @@ def test_faded_squad_value_matters_early_in_a_season_but_not_late():
     late_diff = (plain.loc[late, "model_home"] - faded.loc[late, "model_home"]).abs().mean()
     assert early_diff > 0.01
     assert late_diff < 1e-3
+
+
+def test_championship_matches_rate_promoted_teams():
+    rng = np.random.default_rng(5)
+    top = {f"P{i}": 0.3 - 0.06 * i for i in range(8)}             # a top division
+    second = {f"C{i}": -0.1 - 0.06 * i for i in range(8)}         # a weaker second division
+    second["Riser"] = 0.25                                          # a strong second-division team
+    rows, k = [], 0
+    for division, teams in (("EPL", top), ("CHAMP", second)):
+        for rep in range(4):
+            for h in teams:
+                for a in teams:
+                    if h != a:
+                        k += 1
+                        hg, ag = rng.poisson(np.exp(0.25 + teams[h] - teams[a])), rng.poisson(np.exp(teams[a] - teams[h]))
+                        rows.append({"id": k, "season": 2024, "date": f"2025-0{1 + rep}-{1 + k % 27:02d}", "home": h, "away": a,
+                                     "home_score": hg, "away_score": ag, "home_xg": np.nan, "away_xg": np.nan, "division": division})
+    games = pd.DataFrame(rows)
+    plain = fit_poisson(games, "2025-06-01", champ_weight=0)
+    assert "Riser" not in plain["ratings"].index                      # left out: Premier League only
+    fit = fit_poisson(games, "2025-06-01", champ_weight=0.5)
+    r = fit["ratings"]
+    strength = np.log(r["attack"]) + np.log(r["defense"])
+    assert strength["Riser"] > strength["C7"]                          # rated from its Championship games
+    assert set(fit["championship"]) == {"scoring", "attack", "defense"}   # (its level is set by teams that move divisions)
+    p = predict(fit, "P0", "Riser")
+    assert p["home"] + p["draw"] + p["away"] == pytest.approx(1.0, abs=1e-6)

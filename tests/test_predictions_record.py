@@ -147,7 +147,7 @@ def test_upcoming_matches_have_a_match_page(fixtures, monkeypatch):
     monkeypatch.setattr(site, "date", type("FrozenDate", (), {"today": staticmethod(lambda: date(2026, 10, 9))}))
     site._cache.clear()
     client = TestClient(site.app)
-    home = client.get("/").text
+    home = client.get("/premier-league/").text
     assert 'href="/match/2026-10-10/team-a-v-team-b/"' in home
     page = client.get("/match/2026-10-10/team-a-v-team-b/")
     assert page.status_code == 200

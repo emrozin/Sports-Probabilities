@@ -101,7 +101,7 @@
         {% for p in t.players %}
         {% set a = p.actual %}
         <tr{% if a and not a.played %} class="muted"{% endif %}>
-          <th scope="row">{{ p.name }} <span class="muted">{{ p.position }}</span></th>
+          <th scope="row"><a class="player-link" href="{{ p.url }}">{{ p.name }}</a> <span class="muted">{{ p.position }}</span></th>
           <td class="num">{% if p.qb %}{{ p.pass_yds }}{% if a %} <span class="muted">({{ a.pass_yds or 0 }})</span>{% elif p.chances.pass_yds %}<span class="chance">{{ p.chances.pass_yds }}</span>{% endif %}{% endif %}</td>
           <td class="num">{% if p.qb %}{{ p.pass_tds }}{% if a %} <span class="muted">({{ a.pass_tds or 0 }})</span>{% endif %}{% endif %}</td>
           <td class="num">{% if p.qb %}{{ p.ints }}{% if a %} <span class="muted">({{ a.ints or 0 }})</span>{% endif %}{% endif %}</td>

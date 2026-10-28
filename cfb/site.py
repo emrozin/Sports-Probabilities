@@ -14,9 +14,11 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from cfb.model import MARGIN_SD, elo_probability, fit, load_games, load_market, team_strength, window
+from cfb.model import MARGIN_SD, current_fit, elo_probability, load_games, load_market, team_strength, window
 from cfb.predict_upcoming import MODEL_NAME, MODEL_VERSION
 from cfb.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
+import betting
+import college
 import espn
 from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
 
@@ -36,6 +38,10 @@ GAME_COLUMNS = ["id", "season", "date", "kickoff", "status", "home", "away", "ho
 
 def connect():
     return closing(sqlite3.connect(DB_PATH))
+
+
+def game_url(source_id) -> str | None:
+    return f"{BASE}/cfb/game/{source_id}/" if isinstance(source_id, str) and source_id else None
 
 
 def team_url(team: str, season: int | None = None) -> str:
@@ -138,6 +144,7 @@ def game_card(g, current_team: str | None = None) -> dict:
             "market_line": line_text(-spread if pd.notna(spread := (g.spread_line if pd.notna(g.spread_line)
                                                                    else getattr(g, "market_spread", np.nan))) else None, g.home, g.away),
             "model_total": f"{g.exp_home + g.exp_away:.1f}" if margin is not None else None,
+            "url": game_url(getattr(g, "source_game_id", None)),
             "market_total": f"{total:g}" if pd.notna(total := (g.total_line if pd.notna(g.total_line)
                                                                else getattr(g, "market_total", np.nan))) else None}
     card["edge"] = edge(card["model"], card["market"], {"home": g.home, "away": g.away})
@@ -291,7 +298,7 @@ def current_model() -> dict | None:
             everything = load_games(conn)      # FCS games too: they rate the FCS teams FBS schools play
         train = window(everything[everything["status"] == "final"], today)
         season = int(played["season"].max()) if not played.empty else None
-        d["model"] = fit(train, today, season) if not train.empty else None
+        d["model"] = current_fit(everything, today, season) if not train.empty else None
         if d["model"] is not None:
             d["model"]["starters"] = starters_before(everything[everything["status"] == "final"], today)
         d["model_day"] = today
@@ -305,12 +312,16 @@ def fbs_teams(season: int) -> list[str]:
 
 
 def team_conference(team: str, season: int) -> str | None:
-    games = data()["games"]
-    s = games[(games["season"] == season)]
-    home = s.loc[s["home"] == team, "home_conference"].dropna()
-    away = s.loc[s["away"] == team, "away_conference"].dropna()
-    both = pd.concat([home, away])
-    return both.mode().iloc[0] if not both.empty else None
+    """The team's conference that season (its most common one), from a lookup built once per season."""
+    d = data()
+    key = ("conferences", season)
+    if key not in d:
+        games = d["games"]
+        s = games[games["season"] == season]
+        both = pd.concat([s[["home", "home_conference"]].set_axis(["team", "conf"], axis=1),
+                          s[["away", "away_conference"]].set_axis(["team", "conf"], axis=1)]).dropna()
+        d[key] = both.groupby("team")["conf"].agg(lambda c: c.mode().iloc[0]).to_dict() if len(both) else {}
+    return d[key].get(team)
 
 
 @router.get("/ratings/", response_class=HTMLResponse)
@@ -366,8 +377,9 @@ def season_ratings(season: int) -> pd.DataFrame:
             label = "Bowls" if w.season_type == "postseason" else str(w.week)
             when = "after the bowls" if w.season_type == "postseason" else f"after week {w.week}"
             cutoffs.append((label, when, (pd.Timestamp(w.max) + pd.Timedelta(days=1)).strftime("%Y-%m-%d")))
+        priors: dict = {}
         for step, (label, when, cutoff) in enumerate(cutoffs):
-            model = fit(window(played, cutoff), cutoff, season)
+            model = current_fit(everything, cutoff, season, priors)
             ranked = fbs_centered(model, season, starters_before(played, cutoff))["overall"].sort_values(ascending=False)
             for rank, (team, value) in enumerate(ranked.items(), 1):
                 rows.append({"step": step, "label": label, "when": when, "team": team, "overall": float(value),
@@ -460,8 +472,13 @@ def track_record(request: Request):
         chart_weeks.append({"label": "Bowls" if stype == "postseason" else f"Wk {week}",
                             "model": np.where(won, g["model_home"], 1 - g["model_home"]),
                             "benchmark": np.where(won, g["elo_home"], 1 - g["elo_home"])})
+    from charts import calibration_chart
+    from web import calibration_pairs
+    past = with_predictions(games[(games["status"] == "final") & (games["season"] >= HELD_OUT_FROM)])
+    past = past[past["source"] == "Backtest"]
+    calib = calibration_chart(calibration_pairs(df), calibration_pairs(past), past_from=f"{HELD_OUT_FROM}")
     return render(request, "track_record.html", {"active": "track", "weeks": weeks, "overall": summary(df),
-                                                 "record_url": RECORD_URL,
+                                                 "record_url": RECORD_URL, "calibration": calib,
                                                  "record_chart": record_chart(chart_weeks, "CollegeFootballData's Elo")})
 
 
@@ -648,3 +665,44 @@ def conference_odds_page(request: Request, conference: str | None = None):
         "base_url": f"{BASE}/cfb/conference-odds/", "season": odds["season"],
         "as_of": day_label(odds["as_of"]), "before_as_of": day_label(odds["before_as_of"]) if odds["before_as_of"] else None,
         "simulations": f"{SIMULATIONS:,}", "rating_sd": f"{RATING_SD:g}"})
+
+
+# ---------------------------------------------------------------- game pages
+
+def qb_label(qb, starts) -> str:
+    name = qb_names().get(qb, qb) if isinstance(qb, str) else None
+    if not name:
+        return "not known"
+    return f"{name} ({int(starts)} career start{'' if starts == 1 else 's'})" if pd.notna(starts) else name
+
+
+@router.get("/game/{source_id}/", response_class=HTMLResponse)
+def game_page(request: Request, source_id: str):
+    d = data()
+    games = d["games"]
+    found = games[games["source_game_id"].astype(str) == source_id]
+    if found.empty:
+        raise HTTPException(status_code=404)
+    g = next(with_predictions(found).itertuples())
+    card = game_card(g)
+    finished = g.status == "final"
+    reasons = None
+    model = current_model() if not finished else None
+    if model is not None and pd.notna(getattr(g, "model_home", np.nan)):
+        hq, aq = g.home_qb_expected, g.away_qb_expected
+        hs, as_ = g.home_qb_expected_starts, g.away_qb_expected_starts
+        qb_part = ((team_strength(model, g.home, hq, hs) - team_strength(model, g.home))
+                   - (team_strength(model, g.away, aq, as_) - team_strength(model, g.away)))
+        reasons = college.points_why(model, g.home, g.away, g.home, g.away, bool(g.neutral_site), float(g.model_home),
+                                     getattr(g, "market_home", None),
+                                     qb={"value": 0.0 if np.isnan(qb_part) else qb_part,
+                                         "note": f"{qb_label(aq, as_)} vs {qb_label(hq, hs)}, each against an average starter"})
+    with connect() as conn:
+        moved = betting.movement_chart(conn, int(g.id), g.home, g.away)
+    url = lambda row: game_url(row.source_game_id)
+    stage = lambda row: row.notes if isinstance(row.notes, str) else ("Bowls and playoff" if row.season_type == "postseason" else "")
+    return templates.TemplateResponse(request, "college_game.html", {"sport": "cfb",
+        "active": None, "sport_name": "College football", "g": card, "finished": finished,
+        "date": day_label(g.date, with_year=True), "why": reasons, "moved": moved, "first_season": 2001,
+        "forms": {side: college.form(games, getattr(g, side), g.date, int(g.season), url, 5) for side in ("away", "home")},
+        "h2h": college.head_to_head(games, g.away, g.home, g.date, url, stage=stage)})

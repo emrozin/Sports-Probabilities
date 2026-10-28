@@ -7,12 +7,12 @@ predicts that week's games involving a top-division (FBS) team. Settings were tu
 
 import sqlite3
 
-from cfb.model import backtest, load_games
+from cfb.model import PRESEASON, backtest, load_games
 from db import DB_PATH, SCHEMA_PATH
 from nfl.run_backtest import save
 
 BACKTEST_NAME = "cfb_points_backtest"
-BACKTEST_VERSION = "v2"   # v2: quarterback ratings and the new-starter penalty
+BACKTEST_VERSION = "v3"   # v2: quarterback ratings and the new-starter penalty; v3: preseason ratings
 START_SEASON = 2010
 HELD_OUT_FROM = 2018
 
@@ -23,7 +23,7 @@ def main() -> None:
     games = load_games(conn)
     if games.empty:
         raise SystemExit("No college football games found. Run python -m cfb.import_cfb first.")
-    results = backtest(games, START_SEASON)
+    results = backtest(games, START_SEASON, **PRESEASON)
     save(conn, results, BACKTEST_NAME, BACKTEST_VERSION)
     conn.close()
     print(f"Saved college football backtest predictions for {len(results)} games since {START_SEASON}.")

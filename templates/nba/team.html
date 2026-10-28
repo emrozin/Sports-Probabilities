@@ -6,7 +6,7 @@
 {% block content %}
 <div class="intro">
   <p class="eyebrow"><a href="{{ base }}/nba/standings/{% if division %}?view=division{% endif %}">{{ conference }}ern Conference{% if division %}, {{ division }}{% endif %}</a></p>
-  <h1>{{ team }}</h1>
+  <h1>{{ team }}<button type="button" class="follow" data-follow="nba:{{ team }}" aria-pressed="false"><span aria-hidden="true">★</span> <span class="follow-label">Follow</span></button></h1>
   <p>{{ record }} in {{ season }}.{% if rating %} Rating with today's lineup: {{ rating }} points per game against an average team.{% endif %}</p>
   {% if seasons|length > 1 %}
   <div class="season-picker"><label for="season">Season</label>

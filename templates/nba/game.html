@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "nba/macros.html" import game_card %}
-{% from "nfl/macros.html" import props_table %}
+{% from "nfl/macros.html" import props_table, badge %}
 {% from "why.html" import why_section %}
 {% from "charts.html" import movement_line %}
 {% block title %}{{ g.away }} at {{ g.home }} | NBA probabilities{% endblock %}
@@ -20,22 +20,29 @@
 </section>
 {% endif %}
 <section class="game-section lineups">
-  <h2>{% if finished %}Box score{% if sides[0].rows and sides[0].rows[0].proj %} and projections{% endif %}{% else %}Expected lineups{% endif %}</h2>
-  {% if not finished %}<p class="section-note">Each team's available players with their expected minutes and the model's rating (points per game his team gains with him on the floor for a whole game, against an average player), and the projections. Players ruled out are listed below each team.</p>{% endif %}
+  <h2>{% if finished %}{% if sides[0].total.proj %}Projections and what happened{% else %}Box score{% endif %}{% else %}Expected lineups{% endif %}</h2>
+  {% if finished and sides[0].total.proj %}<p class="section-note">Each player's projection, saved before tip-off, with what actually happened in brackets. Greyed-out players were projected but didn't play; a dash means the player wasn't projected (he wasn't expected to play).</p>
+  {% elif not finished %}<p class="section-note">Each team's available players with their expected minutes and the model's rating (points per game his team gains with him on the floor for a whole game, against an average player), and the projections. Players ruled out are listed below each team.</p>{% endif %}
   <div class="lineup-grid">
   {% for s in sides %}
     <div class="lineup teamed" style="{{ nba_team_colors(s.team) }}">
-      <h3>{{ nba_chip(s.team) }}<a class="team-link" href="{{ nba_team_url(s.team) }}">{{ s.team }}</a></h3>
+      <h3>{{ nba_chip(s.team) }}<a class="team-link" href="{{ nba_team_url(s.team) }}">{{ s.team }}</a>{% if finished and s.total.proj %} <span class="muted small">projected {{ s.total.proj }} points, scored {{ s.total.actual }}</span>{% endif %}</h3>
       <div class="table-wrap">
       <table class="league lineup-table">
         <thead><tr><th scope="col">Player</th><th scope="col" class="num">Min</th>{% if not finished %}<th scope="col" class="num wide-only">Rating</th>{% endif %}
           <th scope="col" class="num">Pts</th><th scope="col" class="num">Reb</th><th scope="col" class="num">Ast</th><th scope="col" class="num">3PM</th></tr></thead>
         <tbody>
         {% for r in s.rows %}
-          <tr><th scope="row">{{ r.name }}</th><td class="num">{{ r.minutes }}</td>{% if not finished %}<td class="num wide-only muted">{{ r.rating }}</td>{% endif %}
+          {% if finished %}
+          <tr{% if not r.played %} class="muted dnp"{% endif %}><th scope="row"><a class="player-link" href="{{ r.url }}">{{ r.name }}</a>{% if not r.played %} <span class="small">(didn't play)</span>{% endif %}</th>
+            <td class="num">{% if r.proj_minutes %}{{ r.proj_minutes }}{% else %}–{% endif %}<span class="muted actual">({{ r.minutes }})</span></td>
             {% for st in ['points', 'rebounds', 'assists', 'threes'] %}
-            <td class="num">{% if finished %}<strong>{{ r.stats[st] }}</strong>{% if r.proj %}<span class="muted proj"> {{ r.proj[st] }}</span>{% endif %}{% elif r.proj %}{{ r.proj[st] }}{% else %}–{% endif %}</td>
+            <td class="num">{% if r.proj %}{{ r.proj[st] }}{% else %}–{% endif %}{% if r.stats %}<span class="muted actual">({{ r.stats[st] }})</span>{% endif %}</td>
             {% endfor %}</tr>
+          {% else %}
+          <tr><th scope="row"><a class="player-link" href="{{ r.url }}">{{ r.name }}</a></th><td class="num">{{ r.minutes }}</td><td class="num wide-only muted">{{ r.rating }}</td>
+            {% for st in ['points', 'rebounds', 'assists', 'threes'] %}<td class="num">{% if r.proj %}{{ r.proj[st] }}{% else %}–{% endif %}</td>{% endfor %}</tr>
+          {% endif %}
         {% endfor %}
         </tbody>
       </table>
@@ -44,6 +51,49 @@
     </div>
   {% endfor %}
   </div>
-  {% if finished and sides[0].rows and sides[0].rows[0].proj %}<p class="note">Bold: what happened; grey: the projection saved before tip-off.</p>{% endif %}
+  {% if finished and sides[0].total.proj %}<p class="note">How accurate are these over many games? See the <a href="{{ base }}/nba/track-record/">track record</a>.</p>{% endif %}
+</section>
+
+<section class="game-section">
+  <h2>Form going into the game</h2>
+  <div class="form-columns">
+    {% for team, f in [(g.away, forms.away), (g.home, forms.home)] %}
+    <div>
+      <h3>{{ nba_chip(team) }}<a class="team-link" href="{{ nba_team_url(team) }}">{{ team }}</a></h3>
+      {% if f.games %}
+      <p class="section-note">{{ f.last }} in the last {{ f.games|length }}{% if f.season %} &middot; {{ f.season }} this season{% endif %} &middot; {% if f.opener %}first game of the season{% elif f.b2b %}<strong>played yesterday</strong> (back-to-back){% else %}{{ f.rest }} days since the last game{% endif %}</p>
+      <ol class="form-list">
+        {% for x in f.games %}
+        <li>{{ badge(x.outcome) }} <a class="team-link" href="{{ x.url }}">{{ x.score }}</a> {{ x.venue }} <a class="team-link" href="{{ nba_team_url(x.opponent) }}">{{ x.opponent }}</a> <span class="muted small">{{ x.date }}</span></li>
+        {% endfor %}
+      </ol>
+      <p class="note">Oldest first.</p>
+      {% else %}
+      <p class="note">No earlier games in the data.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="game-section">
+  <h2>Head to head</h2>
+  {% if h2h.count %}
+  <p class="section-note">{{ h2h.count }} meeting{{ '' if h2h.count == 1 else 's' }} since {{ h2h.first }}{% if h2h.playoff_games %}, {{ h2h.playoff_games }} of them in the playoffs{% endif %}: {{ h2h.a }} {{ h2h.wins_a }}, {{ h2h.b }} {{ h2h.wins_b }}.{% if h2h.count > h2h.meetings|length %} The latest {{ h2h.meetings|length }}:{% endif %}</p>
+  <ul class="h2h-list">
+    {% for m in h2h.meetings %}
+    <li>
+      <span class="h2h-date">{{ m.date }}{% if m.stage %} &middot; {{ m.stage }}{% endif %}</span>
+      <a class="team-link" href="{{ m.url }}">
+        <span class="{{ 'winner' if m.winner == m.away }}">{{ m.away }}</span>
+        <span class="h2h-score">{{ m.score }}</span>
+        <span class="{{ 'winner' if m.winner == m.home }}">at {{ m.home }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="note">These teams haven't met before this game in the data (since 2002-03).</p>
+  {% endif %}
 </section>
 {% endblock %}

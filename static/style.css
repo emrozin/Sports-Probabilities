@@ -442,9 +442,18 @@ code {
 
 @media (max-width: 40rem) {
   .league .wide-only { display: none; }
+  .league .long-name { display: none; }
+  .league .short-name { display: inline; }
+  .league.league-odds th, .league.league-odds td { padding: 0.5rem 0.25rem; }
+  .league.league-odds thead th { white-space: normal; line-height: 1.2; }
+  .league.league-odds tbody th { font-size: 1rem; }
   .league th, .league td { padding: 0.5rem 0.4rem; }
   .league tbody th { font-size: 1.05rem; }
+  .nfl-standings tbody th, .today-table tbody th { white-space: normal; }   /* long names wrap rather than push the table wider than the phone */
+  .today-table td, .today-table th { padding: 0.5rem 0.3rem; }
 }
+.short-name { display: none; }
+.division-grid > * { min-width: 0; }   /* a wide table scrolls inside its box instead of widening the page */
 
 /* ---------- Finished matches: winner bold, loser grey, draws level ---------- */
 .teams.finished .team-home, .teams.finished .team-away { font-weight: 500; color: var(--ink); }
@@ -527,6 +536,9 @@ code {
 .form-list { list-style: none; margin: 0; padding: 0; }
 .form-list li { display: flex; align-items: center; gap: 0.55rem; padding: 0.35rem 0; border-bottom: 1px solid var(--line); }
 .form-list a { font-weight: 600; font-variant-numeric: tabular-nums; }
+.form-list li { flex-wrap: wrap; row-gap: 0.1rem; }
+.form-list a { white-space: nowrap; }
+.form-list li .small { margin-left: auto; white-space: nowrap; }
 
 .h2h-list { list-style: none; margin: 0; padding: 0; max-width: 40rem; }
 .h2h-list li { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
@@ -675,7 +687,7 @@ body { background: var(--paper); }
   background-size: 100% 4px;
   background-repeat: no-repeat;
 }
-.matches .match.card.epl {
+.matches .match.card.epl, .matches .match.card.ucl {
   background-image: linear-gradient(90deg, var(--home) 0 50%, var(--away) 50% 100%);
 }
 
@@ -911,7 +923,8 @@ a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px soli
 .col-letter-W { color: var(--ink); }
 
 /* Tooltips for chart points and columns (hover or keyboard focus) */
-.pt:hover::after, .pt:focus-visible::after, .col:hover::after, .col:focus-visible::after {
+.pt:hover::after, .pt:focus-visible::after, .col:hover::after, .col:focus-visible::after,
+.calib-pt:hover::after, .calib-pt:focus-visible::after {
   content: attr(data-tip);
   position: absolute;
   bottom: calc(100% + 0.5rem);
@@ -1087,3 +1100,127 @@ a:focus-visible, select:focus-visible, summary:focus-visible { outline: 3px soli
 .chart-movement .pt-model { width: 7px; height: 7px; background: var(--accent); }
 @media (max-width: 600px) { .chart-movement .chart-x .x-mid { display: none; } }
 .chart-movement .chart-x span:first-child { transform: none; } .chart-movement .chart-x span:last-child { transform: translateX(-100%); }
+
+/* NBA finished games: the projection, with what happened underneath */
+.lineup-table .actual { display: block; font-size: 0.8rem; line-height: 1.1; }
+.lineup-table tr.dnp th { font-weight: 400; }
+@media (max-width: 600px) {
+  .lineup-table th[scope="row"] { white-space: normal; min-width: 6.5rem; }
+  .lineup-table td, .lineup-table th { padding-left: 0.3rem; padding-right: 0.3rem; font-size: 0.88rem; }
+  .lineup h3 { flex-wrap: wrap; }
+  .lineup h3 .small { display: block; flex-basis: 100%; font-weight: 400; margin-top: 0.15rem; }
+}
+
+/* Calibration chart */
+.calib { display: grid; grid-template-columns: minmax(12rem, 20rem) minmax(14rem, 1fr); gap: 1.5rem 2.5rem; align-items: start; max-width: 52rem; }
+.calib-plot { margin: 0; padding-left: 2.6rem; }
+.calib-frame { position: relative; margin-bottom: 1.8rem; }
+.calib-area { position: relative; aspect-ratio: 1; border-left: 1px solid var(--muted); border-bottom: 1px solid var(--muted); }
+.calib-area svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.calib-diag { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.calib-grid-x, .calib-grid-y { position: absolute; background: var(--line); }
+.calib-grid-x { top: 0; bottom: 0; width: 1px; }
+.calib-grid-y { left: 0; right: 0; height: 1px; }
+.calib-pt { position: absolute; width: 12px; height: 12px; border-radius: 50%; transform: translate(-50%, -50%); }
+.calib-past { background: var(--surface); border: 2px solid var(--muted); }
+.calib-live { background: var(--accent); border: 2px solid var(--surface); width: 14px; height: 14px; z-index: 1; }
+.calib-x, .calib-y { position: absolute; font-size: 0.75rem; color: var(--muted); }
+.calib-x { left: 0; right: 0; top: calc(100% + 0.25rem); height: 1rem; }
+.calib-x span { position: absolute; transform: translateX(-50%); }
+.calib-y { top: 0; bottom: 0; left: -2.6rem; width: 2.3rem; }
+.calib-y span { position: absolute; right: 0; transform: translateY(50%); }
+.calib-plot figcaption { margin-top: 0.25rem; }
+.calib-key { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; margin-right: 0.2rem; }
+.calib-key.calib-past { border: 2px solid var(--muted); }
+.calib-key.calib-live { background: var(--accent); }
+@media (max-width: 700px) { .calib { grid-template-columns: 1fr; } .calib-plot { max-width: 17rem; padding-right: 1rem; } }
+
+/* Premier League team news */
+.news-list { list-style: none; margin: 0; padding: 0; }
+.news-list li { padding: 0.45rem 0; border-bottom: 1px solid var(--line); }
+.news-status { float: right; font-size: 0.85rem; font-weight: 600; }
+.news-out .news-status { color: var(--bad); }
+.news-doubt .news-status { color: var(--edge); }
+
+/* ---------- Header: search, phone menu ---------- */
+.site-header .sport-tabs { flex-wrap: nowrap; }
+.site-search { margin-left: auto; align-self: center; }
+.site-header > .site-brand { flex-basis: 100%; }
+.on-search .site-search, .on-search .search-toggle { display: none !important; }
+.site-search input {
+  width: 15rem; max-width: 100%; padding: 0.35rem 0.75rem; font: inherit; font-size: 0.9rem;
+  color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+}
+.site-search input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.nav-toggle, .search-toggle { display: none; }
+@media (max-width: 40rem) {
+  .site-brand { width: 100%; }
+  .site-header .sport-tabs { width: 100%; }
+  .site-search { order: 3; width: 100%; margin-left: 0; display: none; }
+  .sport-today .site-search, .search-open .site-search { display: block; }
+  .site-search input { width: 100%; }
+  .search-toggle {
+    display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.3rem; order: 1; margin-left: auto;
+    color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .sport-today .search-toggle { display: none; }
+  .nav-toggle {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.35rem 0.85rem; font: inherit; font-weight: 600;
+    color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer;
+  }
+  .site-header > nav[aria-label="Main"] { display: none; order: 2; }
+  .site-header > nav[aria-label="Main"].open {
+    display: flex; flex-direction: column; flex-wrap: nowrap; overflow: visible; gap: 0; width: 100%;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 0.25rem 0;
+  }
+  .site-header > nav[aria-label="Main"].open a { padding: 0.6rem 0.9rem; border-bottom: 0; }
+  .site-header > nav[aria-label="Main"].open a[aria-current="page"] { background: var(--accent-soft); }
+}
+
+/* ---------- Favorite teams ---------- */
+.follow {
+  margin-left: 0.75rem; vertical-align: middle; padding: 0.3rem 0.8rem; font: inherit; font-size: 0.9rem; font-weight: 600;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+}
+.follow[aria-pressed="true"] { color: var(--paper); background: var(--accent); border-color: var(--accent); }
+.mine-filter { margin: 0 0 1rem; }
+.mine-filter button {
+  padding: 0.3rem 0.9rem; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px; cursor: pointer;
+}
+.mine-filter button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.only-mine [data-teams]:not(.is-mine) { display: none; }
+.is-mine.card { box-shadow: 0 0 0 2px var(--accent); }
+tr.is-mine th[scope="row"]::before { content: "★ "; color: var(--accent); }
+.card.is-mine .card-top::after { content: "★"; color: var(--accent); margin-left: auto; }
+
+.player-link { color: inherit; text-decoration: none; }
+.player-link:hover { text-decoration: underline; }
+
+/* Search page */
+.search-page { display: flex; gap: 0.5rem; max-width: 32rem; margin-top: 0.75rem; }
+.search-page input { flex: 1; min-width: 0; padding: 0.5rem 0.9rem; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 999px; }
+.search-page button { padding: 0.5rem 1.1rem; font: inherit; font-weight: 600; color: var(--paper); background: var(--ink); border: 0; border-radius: 999px; cursor: pointer; }
+.search-results { list-style: none; margin: 0; padding: 0; max-width: 40rem; }
+.search-results li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.search-results a { font-weight: 600; }
+
+/* ---------- Champions League ---------- */
+.ucl-table tr.zone-line td, .ucl-table tr.zone-line th, .league tr.zone-line td, .league tr.zone-line th { border-bottom: 2px solid var(--muted); }
+.ucl-table tr.zone-out td, .ucl-table tr.zone-out th { color: var(--muted); }
+.ucl-table .pos { color: var(--muted); width: 2rem; }
+.favorites { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.4rem 1.5rem; }
+.favorites li { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem 0; border-bottom: 1px solid var(--line); }
+.favorites li strong { margin-left: auto; font-variant-numeric: tabular-nums; }
+.league.compact { max-width: 40rem; }
+
+/* ---------- How it works ---------- */
+.method-toc { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; margin: 0 0 1.5rem; font-size: 0.95rem; }
+.method { max-width: 46rem; }
+.method-list dt { font-family: var(--font-display); font-size: 1.2rem; font-weight: 600; margin-top: 1rem; }
+.method-list dd { margin: 0.2rem 0 0; }
+.method-steps li { margin-bottom: 0.6rem; }
+.method-table td, .method-table th { white-space: normal; }
+.cup-switch { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 1.25rem; }
+.cup-switch a { padding: 0.3rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; text-decoration: none; color: var(--ink); font-size: 0.92rem; }
+.cup-switch a[aria-current="page"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }

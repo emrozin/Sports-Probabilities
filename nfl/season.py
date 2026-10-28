@@ -107,10 +107,11 @@ def setup(games: pd.DataFrame, season: int, as_of: str) -> dict:
         "season": season, "as_of": as_of, "teams": teams,
         "conference": np.array([conference(t) for t in teams]),
         "division": np.array([division(t) for t in teams]),
-        "known": (known["home"].map(index).to_numpy(), known["away"].map(index).to_numpy(),
+        # team positions as integers, even when there are no games (an empty column has no type of its own)
+        "known": (known["home"].map(index).to_numpy(dtype=int), known["away"].map(index).to_numpy(dtype=int),
                   (known["home_score"] - known["away_score"]).to_numpy(dtype=float)),
-        "remaining": (remaining["home"].map(index).to_numpy(), remaining["away"].map(index).to_numpy(),
-                      np.array([margin(g) for g in remaining.itertuples()])),
+        "remaining": (remaining["home"].map(index).to_numpy(dtype=int), remaining["away"].map(index).to_numpy(dtype=int),
+                      np.array([margin(g) for g in remaining.itertuples()], dtype=float)),
         "strength": strength, "home_adv": float(model["home_adv"]),
         "playoff_teams": 7 if season >= FOURTEEN_TEAMS_FROM else 6,
     }

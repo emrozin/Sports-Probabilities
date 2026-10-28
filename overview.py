@@ -12,7 +12,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 import betting
-from web import BASE, ROOT, day_label, slugify, templates
+from web import BASE, ROOT, day_label, disk_cached, slugify, templates
 
 DB_PATH = ROOT / "data" / "sports.db"
 router = APIRouter()
@@ -50,6 +50,34 @@ def cached(key: str, make):
     return _cache[key]
 
 
+def suggestions_now(now: datetime | None = None) -> pd.DataFrame:
+    """The bets the rule suggests now: worked out at most every five minutes (until the data changes)."""
+    now = now or now_eastern()
+    bucket = f"{now:%Y%m%d%H}{now.minute // 5}"
+
+    def make():
+        if not DB_PATH.exists():
+            return pd.DataFrame()
+        with connect() as conn:
+            if conn.execute("SELECT name FROM sqlite_master WHERE name = 'games'").fetchone() is None:
+                return pd.DataFrame()
+            if conn.execute("SELECT name FROM sqlite_master WHERE name = 'bets'").fetchone() is None:
+                conn.executescript(open(ROOT / "schema.sql").read())
+            return betting.suggestions(conn, now)
+    return cached(f"suggestions {bucket}", make)
+
+
+def bet_log() -> pd.DataFrame:
+    def make():
+        if not DB_PATH.exists():
+            return pd.DataFrame()
+        with connect() as conn:
+            if conn.execute("SELECT name FROM sqlite_master WHERE name = 'bets'").fetchone() is None:
+                return pd.DataFrame()
+            return betting.logged(conn)
+    return cached("bet log", make)
+
+
 def american(price: float) -> str:
     return betting.decimal_to_american(price)
 
@@ -71,6 +99,16 @@ def game_link(league: str, row) -> str:
             found = conn.execute("SELECT source_game_id FROM nba_game_info WHERE game_id = ?", (int(row["game_id"]),)).fetchone()
             if found:
                 return f"{BASE}/nba/game/{found[0]}/"
+        if league in ("UCL", "UEL", "UECL", "ESP", "GER", "ITA", "FRA"):
+            from ucl.cups import CUPS
+            found = conn.execute("SELECT espn_id FROM cup_game_info WHERE game_id = ?", (int(row["game_id"]),)).fetchone()
+            if found:
+                return f"{BASE}{CUPS[league]['url']}match/{found[0]}/"
+        if league in ("CFB", "CBB"):
+            table = "cfb_game_info" if league == "CFB" else "cbb_game_info"
+            found = conn.execute(f"SELECT source_game_id FROM {table} WHERE game_id = ?", (int(row["game_id"]),)).fetchone()
+            if found:
+                return f"{BASE}/{league.lower()}/game/{found[0]}/"
     return f"{BASE}{betting.sports()[league]['url']}"
 
 
@@ -91,7 +129,8 @@ def histories() -> dict:
             if conn.execute("SELECT name FROM sqlite_master WHERE name = 'games'").fetchone() is None:
                 return {}
             return {league: betting.history(conn, league) for league in betting.sports()}
-    return cached("histories", make)
+    stamp = DB_PATH.stat().st_mtime if DB_PATH.exists() else None
+    return cached("histories", lambda: disk_cached(DB_PATH.parent / "cache", "betting_histories", (stamp, "v1"), make))
 
 
 def verdict(league: str) -> dict:
@@ -112,6 +151,7 @@ def suggestion_rows(picks: pd.DataFrame, bankroll: float, fraction: float) -> li
         v = verdict(r["league"])
         rule_stake = float(betting.stake_share(r["kelly"], fraction)) * bankroll
         rows.append({"sport": betting.sports()[r["league"]]["name"], "league": r["league"], "date": day_label(r["date"]),
+                     "teams": f"{r['league'].lower()}:{r['home']}|{r['league'].lower()}:{r['away']}",
                      "time": kickoff_text(r["kickoff"]), "matchup": f"{r['away']} at {r['home']}", "url": game_link(r["league"], r),
                      "pick": pick_label(r), "price": american(r["price"]), "decimal": f"{r['price']:.2f}",
                      "model": f"{r['p'] * 100:.0f}%", "market": f"{r['market'] * 100:.0f}%", "edge": f"{r['edge'] * 100:+.1f}%",
@@ -137,19 +177,26 @@ def experiment_rows() -> list[dict]:
              "note": r["note"] if isinstance(r["note"], str) else ""} for _, r in df.iterrows()]
 
 
+def spread_total_rows() -> list[dict]:
+    """Spreads and totals on the held-out seasons (betting_lines.py), for the Betting page."""
+    from betting_lines import RECORD_PATH as path
+    if not path.exists():
+        return []
+    df = pd.read_csv(path)
+    signed = lambda x: f"{x * 100:+.1f}%".replace("-", "−")
+    return [{"name": r["name"], "seasons": str(r["seasons"]).replace("-", "–"), "bets": f"{int(r['bets']):,}",
+             "expected": signed(r["expected"]), "roi": signed(r["roi"]),
+             "range": f"{signed(r['roi_low'])} to {signed(r['roi_high'])}", "kelly": f"${r['bankroll']:,.0f}",
+             "losing": r["roi_high"] < 0, "model_loss": f"{r['model_loss']:.3f}", "market_loss": f"{r['market_loss']:.3f}",
+             "beat_market": r["model_loss"] < r["market_loss"]} for _, r in df.iterrows()]
+
 
 @router.get("/betting/", response_class=HTMLResponse)
 def betting_page(request: Request, bankroll: float = 1000.0, fraction: float = betting.KELLY_FRACTION):
     bankroll = float(np.clip(bankroll, 10, 10_000_000))
     fraction = float(np.clip(fraction, 0.05, 1.0))
-    picks = pd.DataFrame()
-    log = pd.DataFrame()
-    if DB_PATH.exists():
-        with connect() as conn:
-            if conn.execute("SELECT name FROM sqlite_master WHERE name = 'games'").fetchone():
-                conn.executescript(open(ROOT / "schema.sql").read())
-                picks = betting.suggestions(conn)
-                log = betting.logged(conn)
+    picks = suggestions_now()
+    log = bet_log()
     tests = []
     for league, h in histories().items():
         if h is None:
@@ -180,9 +227,28 @@ def betting_page(request: Request, bankroll: float = 1000.0, fraction: float = b
         "sport": "betting", "active": "betting", "bankroll": f"{bankroll:g}", "fraction": fraction,
         "fractions": [(0.1, "a tenth"), (0.25, "a quarter"), (0.5, "half"), (1.0, "full")],
         "suggestions": suggestion_rows(picks, bankroll, fraction), "tests": tests, "record": record,
-        "experiments": experiment_rows(),
+        "experiments": experiment_rows(), "spreads_totals": spread_total_rows(),
         "any_winning": any_winning, "min_edge": f"{betting.MIN_EDGE * 100:.0f}%", "cap": f"{betting.MAX_STAKE * 100:.0f}%",
         "verdicts": {betting.sports()[l]["name"]: verdict(l) for l in betting.sports()}})
+
+
+# ---------------------------------------------------------------- /methodology/
+
+@router.get("/methodology/", response_class=HTMLResponse)
+def methodology_page(request: Request):
+    import json
+    from ucl.run_backtest import SUMMARY_PATH
+    cups = []
+    if SUMMARY_PATH.exists():
+        from ucl.cups import CUPS
+        s = json.loads(SUMMARY_PATH.read_text())
+        for code, c in s.get("competitions", {}).items():
+            h = c["held_out"]
+            last = max(x["season"] for x in c["seasons"])
+            if h.get("model"):
+                cups.append({"name": CUPS[code]["name"], "model": f"{h['model']:.3f}", "elo": f"{h['elo']:.3f}",
+                             "seasons": f"{s['held_out_from']}-{(s['held_out_from'] + 1) % 100:02d} to {last}-{(last + 1) % 100:02d}"})
+    return templates.TemplateResponse(request, "methodology.html", {"sport": "today", "active": "methodology", "cups": cups})
 
 
 # ---------------------------------------------------------------- /today/
@@ -190,6 +256,10 @@ def betting_page(request: Request, bankroll: float = 1000.0, fraction: float = b
 def today_games() -> pd.DataFrame:
     """Every game today in every sport, with the model's favorite and the market's chance for it."""
     today = now_eastern().date().isoformat()
+    return cached(f"today games {today}", lambda: _today_games(today))
+
+
+def _today_games(today: str) -> pd.DataFrame:
     out = []
     if not DB_PATH.exists():
         return pd.DataFrame()
@@ -234,6 +304,7 @@ def today_page(request: Request):
                 finished = r["status"] == "final"
                 started = finished or has_started(r["date"], r["kickoff"] if isinstance(r["kickoff"], str) else None, now)
                 row = {"time": kickoff_text(r["kickoff"]), "matchup": f"{r['away']} at {r['home']}", "url": game_link(league, r),
+                       "teams": f"{league.lower()}:{r['home']}|{league.lower()}:{r['away']}",
                        "finished": finished, "started": started,
                        "score": f"{int(r['away_score'])}–{int(r['home_score'])}" if finished else None,
                        "pick": pick_label(r) if pd.notna(r.get("p")) else None,
@@ -248,11 +319,7 @@ def today_page(request: Request):
                                  "gap_text": f"{(r['p'] - r['market']) * 100:+.0f} pts"})
             groups.append({"sport": info["name"], "url": f"{BASE}{info['url']}", "rows": rows})
     gaps = sorted(gaps, key=lambda g: g["gap"], reverse=True)[:5]
-    picks = pd.DataFrame()
-    if DB_PATH.exists():
-        with connect() as conn:
-            if conn.execute("SELECT name FROM sqlite_master WHERE name = 'games'").fetchone():
-                picks = betting.suggestions(conn, now)
+    picks = suggestions_now(now)
     if not picks.empty:
         picks = picks[picks["date"] == now.date().isoformat()]
     return templates.TemplateResponse(request, "today.html", {
@@ -262,6 +329,10 @@ def today_page(request: Request):
 
 def today_props(today: str) -> list[dict]:
     """The likeliest player props today: NBA and NFL."""
+    return cached(f"today props {today}", lambda: _today_props(today))
+
+
+def _today_props(today: str) -> list[dict]:
     rows = []
     try:
         import nba.site as nba_site
@@ -283,3 +354,93 @@ def today_props(today: str) -> list[dict]:
     except Exception:
         pass
     return rows
+
+
+# ---------------------------------------------------------------- /search/
+
+def search_index() -> list[dict]:
+    """Every team and recent player the site has a page for: name, what it is, sport, link."""
+    def make():
+        items = []
+        if not DB_PATH.exists():
+            return items
+        has = lambda conn, t: conn.execute("SELECT name FROM sqlite_master WHERE name = ?", (t,)).fetchone() is not None
+        with connect() as conn:
+            if not has(conn, "games"):
+                return items
+            for league, label, url in (("EPL", "Premier League", lambda t: f"{BASE}/team/{slugify(t)}/"),
+                                       ("NBA", "NBA", lambda t: f"{BASE}/nba/team/{slugify(t)}/")):
+                for (team,) in conn.execute("""SELECT DISTINCT t.name FROM teams t JOIN leagues l ON l.id = t.league_id AND l.code = ?
+                                               JOIN games g ON g.home_team_id = t.id
+                                               WHERE g.season >= (SELECT MAX(season) FROM games WHERE league_id = l.id) - 3""", (league,)):
+                    items.append({"name": team, "kind": "Team", "sport": label, "url": url(team)})
+            if has(conn, "cup_game_info"):
+                from ucl.cups import CUPS
+                from ucl.site import team_url as cup_team_url
+                for code, cup in CUPS.items():
+                    season = conn.execute("""SELECT MAX(g.season) FROM games g JOIN leagues l ON l.id = g.league_id AND l.code = ?""",
+                                          (code,)).fetchone()[0]
+                    for (team,) in conn.execute("""SELECT DISTINCT t.name FROM games g JOIN leagues l ON l.id = g.league_id AND l.code = ?
+                                                   JOIN teams t ON t.id IN (g.home_team_id, g.away_team_id) WHERE g.season = ?""",
+                                                (code, season)):
+                        items.append({"name": team, "kind": "Team", "sport": cup["name"], "url": cup_team_url(team, code)})
+            from nfl.site import team_url as nfl_team_url
+            from nfl.teams import TEAMS
+            items += [{"name": name, "kind": "Team", "sport": "NFL", "url": nfl_team_url(code)} for code, (name, _) in TEAMS.items()]
+            if has(conn, "cfb_game_info"):
+                for (team,) in conn.execute("""SELECT DISTINCT t.name FROM games g JOIN cfb_game_info i ON i.game_id = g.id
+                                               JOIN teams t ON t.id = g.home_team_id
+                                               WHERE i.home_division = 'fbs' AND g.season >= (SELECT MAX(season) FROM games
+                                                     WHERE id IN (SELECT game_id FROM cfb_game_info)) - 1"""):
+                    items.append({"name": team, "kind": "Team", "sport": "College football", "url": f"{BASE}/cfb/team/{slugify(team)}/"})
+            if has(conn, "cbb_game_info"):
+                for (team,) in conn.execute("""SELECT DISTINCT t.name FROM games g JOIN cbb_game_info i ON i.game_id = g.id
+                                               JOIN teams t ON t.id = g.home_team_id
+                                               WHERE i.home_conference IS NOT NULL AND g.season >= (SELECT MAX(season) FROM games
+                                                     WHERE id IN (SELECT game_id FROM cbb_game_info)) - 1"""):
+                    items.append({"name": team, "kind": "Team", "sport": "College basketball", "url": f"{BASE}/cbb/team/{slugify(team)}/"})
+            if has(conn, "nba_player_games"):
+                rows = conn.execute("""SELECT p.player_id, p.name, p.team, MAX(g.date) FROM nba_player_games p JOIN games g ON g.id = p.game_id
+                                       WHERE g.season >= (SELECT MAX(season) FROM games WHERE id IN (SELECT game_id FROM nba_game_info)) - 1
+                                       AND p.minutes > 0 GROUP BY p.player_id""").fetchall()
+                items += [{"name": name, "kind": "Player", "sport": "NBA", "detail": team, "url": f"{BASE}/nba/player/{pid}/"}
+                          for pid, name, team, _ in rows]
+            if has(conn, "nfl_player_stats"):
+                rows = conn.execute("""SELECT s.player_id, s.name, s.position, s.team, MAX(g.date) FROM nfl_player_stats s
+                                       JOIN games g ON g.id = s.game_id
+                                       WHERE g.season >= (SELECT MAX(season) FROM games WHERE id IN (SELECT game_id FROM nfl_game_info)) - 1
+                                       GROUP BY s.player_id""").fetchall()
+                from nfl.site import team_name as nfl_team_name
+                items += [{"name": name, "kind": "Player", "sport": "NFL", "detail": f"{pos or ''} {nfl_team_name(team)}".strip(),
+                           "url": f"{BASE}/nfl/player/{pid}/"} for pid, name, pos, team, _ in rows]
+        return items
+    return cached("search index", make)
+
+
+def fold(text: str) -> str:
+    """'Jokić' -> 'jokic': lowercase, accents and punctuation removed, for matching."""
+    import unicodedata
+    text = unicodedata.normalize("NFKD", str(text)).encode("ascii", "ignore").decode().lower()
+    return "".join(ch if ch.isalnum() else " " for ch in text).strip()
+
+
+def search(query: str, limit: int = 40) -> list[dict]:
+    q = fold(query)
+    if len(q) < 2:
+        return []
+    words = q.split()
+    scored = []
+    for item in search_index():
+        name = fold(item["name"])
+        if all(w in name for w in words):
+            starts = name.startswith(q) or any(part.startswith(q) for part in name.split())
+            scored.append((0 if name == q else 1 if starts else 2, item["kind"] != "Team", len(name), item))
+    scored.sort(key=lambda s: s[:3])
+    return [s[3] for s in scored[:limit]]
+
+
+@router.get("/search/", response_class=HTMLResponse)
+def search_page(request: Request, q: str = ""):
+    results = search(q)
+    return templates.TemplateResponse(request, "search.html", {"sport": "today", "active": None, "query": q,
+                                                               "results": results})

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "cfb/macros.html" import game_card as cfb_card %}
+{% from "cbb/macros.html" import game_card as cbb_card %}
+{% from "nfl/macros.html" import badge %}
+{% from "why.html" import why_section %}
+{% from "charts.html" import movement_line %}
+{% set team_url = cfb_team_url if sport == 'cfb' else cbb_team_url %}
+{% set colors = cfb_colors if sport == 'cfb' else cbb_colors %}
+{% block title %}{{ g.away }} {{ 'vs' if g.neutral else 'at' }} {{ g.home }} | {{ sport_name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow"><a href="{{ base }}/{{ sport }}/">{{ sport_name }}</a> &middot; {{ date }}</p>
+  <h1>{{ g.away }} {{ 'vs' if g.neutral else 'at' }} {{ g.home }}</h1>
+</div>
+<ul class="matches single">{% if sport == 'cfb' %}{{ cfb_card(g, single=True) }}{% else %}{{ cbb_card(g, single=True) }}{% endif %}</ul>
+
+{{ why_section(why, colors(g.home, g.away)) }}
+{% if moved %}{{ movement_line(moved, finished) }}{% endif %}
+
+<section class="game-section">
+  <h2>Form going into the game</h2>
+  <div class="form-columns">
+    {% for team, f in [(g.away, forms.away), (g.home, forms.home)] %}
+    <div>
+      <h3><a class="team-link" href="{{ team_url(team) }}">{{ team }}</a></h3>
+      {% if f.games %}
+      <p class="section-note">{{ f.last }} in the last {{ f.games|length }}{% if f.season %} &middot; {{ f.season }} this season{% endif %} &middot; {% if f.opener %}first game of the season{% else %}{{ f.rest }} day{{ '' if f.rest == 1 else 's' }} since the last game{% endif %}</p>
+      <ol class="form-list">
+        {% for x in f.games %}
+        <li>{{ badge(x.outcome) }} {% if x.url %}<a class="team-link" href="{{ x.url }}">{{ x.score }}</a>{% else %}{{ x.score }}{% endif %} {{ x.venue }} <a class="team-link" href="{{ team_url(x.opponent) }}">{{ x.opponent }}</a> <span class="muted small">{{ x.date }}</span></li>
+        {% endfor %}
+      </ol>
+      <p class="note">Oldest first.</p>
+      {% else %}
+      <p class="note">No earlier games in the data.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="game-section">
+  <h2>Head to head</h2>
+  {% if h2h.count %}
+  <p class="section-note">{{ h2h.count }} meeting{{ '' if h2h.count == 1 else 's' }} since {{ h2h.first }}: {{ h2h.a }} {{ h2h.wins_a }}, {{ h2h.b }} {{ h2h.wins_b }}.{% if h2h.count > h2h.meetings|length %} The latest {{ h2h.meetings|length }}:{% endif %}</p>
+  <ul class="h2h-list">
+    {% for m in h2h.meetings %}
+    <li>
+      <span class="h2h-date">{{ m.date }}{% if m.stage %} &middot; {{ m.stage }}{% endif %}</span>
+      {% if m.url %}<a class="team-link" href="{{ m.url }}">{% else %}<span>{% endif %}
+        <span class="{{ 'winner' if m.winner == m.away }}">{{ m.away }}</span>
+        <span class="h2h-score">{{ m.score }}</span>
+        <span class="{{ 'winner' if m.winner == m.home }}">{{ 'vs' if m.neutral else 'at' }} {{ m.home }}</span>
+      {% if m.url %}</a>{% else %}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="note">These teams haven't met before this game in the data (since {{ first_season }}).</p>
+  {% endif %}
+</section>
+{% endblock %}

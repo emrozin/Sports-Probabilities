@@ -1,0 +1,59 @@
+{% from "macros.html" import split_bar, outcome_badge %}
+
+{# A European cup game as a card (the Premier League's card, with ESPN's team colors). #}
+{% macro team_link(name, current=None) -%}
+  {% if name == current %}{{ name }}{% else %}<a class="team-link" href="{{ cup_team_url(name, cup.code) }}">{{ name }}</a>{% endif %}
+{%- endmacro %}
+
+{% macro ucl_card(m, current_team=None) %}
+  {% set finished = m.score %}
+  <li class="match card teamed ucl{% if finished %} is-finished{% endif %}" style="{{ ucl_colors(m.home, m.away) }}" data-teams="{{ m.teams }}">
+    <div class="card-top">
+      <span class="card-when">{{ m.stage }}{% if not finished %}{% if m.stage %} &middot; {% endif %}{{ m.time }}{% endif %}</span>
+      {% if m.edge and not finished %}
+      <span class="edge" title="The model gives {{ m.edge.team }} a {{ m.edge.points }}-point higher chance of winning than the betting market does">Model {{ m.edge.points }} pts higher on {{ m.edge.team }}</span>
+      {% elif m.source and not finished %}<span class="source">{{ m.source }}</span>{% endif %}
+    </div>
+    <div class="sides">
+      {% for side in ['home', 'draw', 'away'] %}
+        {% if side == 'draw' %}
+          {% if not finished and m.model %}
+          <div class="side side-draw"><span class="chip" aria-hidden="true"></span><span class="side-name">Draw</span><span class="side-number">{{ m.model.draw }}<small>%</small></span></div>
+          {% endif %}
+        {% else %}
+          {% set other = 'away' if side == 'home' else 'home' %}
+          {% set state = ('winner' if m.result == side else 'loser' if m.result == other else 'level') if finished
+                         else ('fav' if m.model and m.model[side] >= m.model[other] else 'dog') %}
+          <div class="side side-{{ side }} {{ state }}">
+            <span class="chip" aria-hidden="true"></span>
+            <span class="side-name">{{ team_link(m[side], current_team) }}</span>
+            <span class="side-number">{% if finished %}{{ m[side ~ '_score'] }}{% elif m.model %}{{ m.model[side] }}<small>%</small>{% endif %}</span>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if m.model %}
+    <div class="card-bars">
+      <span class="bar-name">Model</span>{{ split_bar(m.model, 'card', m.result if finished else None) }}
+      {% if m.market %}<span class="bar-name">Market</span>{{ split_bar(m.market, 'card-market', m.result if finished else None) }}{% endif %}
+    </div>
+    {% endif %}
+    {% if finished %}
+      <p class="card-note">
+        {% if m.pens %}{{ m.pens }}. {% endif %}
+        {% if m.model %}Model gave this result <strong>{{ m.model_actual }}%</strong>{% if m.market_actual is defined and m.market_actual is not none %}, market {{ m.market_actual }}%{% endif %}.{% if m.pens %} (After 90 minutes it was a draw.){% endif %}
+        {% else %}No model prediction for this game.{% endif %}
+      </p>
+    {% elif m.model %}
+      <table class="card-lines">
+        <thead><tr><td></td><th scope="col">Home</th><th scope="col">Draw</th><th scope="col">Away</th><th scope="col">Over 2.5</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Model</th><td>{{ m.model.home }}%</td><td>{{ m.model.draw }}%</td><td>{{ m.model.away }}%</td><td>{{ m.over ~ '%' if m.over is not none else '–' }}</td></tr>
+          <tr class="muted"><th scope="row">Market</th>{% if m.market %}<td>{{ m.market.home }}%</td><td>{{ m.market.draw }}%</td><td>{{ m.market.away }}%</td>{% else %}<td colspan="3">No odds yet</td>{% endif %}<td>–</td></tr>
+        </tbody>
+      </table>
+      {% if m.top_scores %}<p class="card-note">Likeliest scores: {% for sc in m.top_scores %}<strong>{{ sc.score }}</strong> {{ sc.pct }}%{% if not loop.last %}, {% endif %}{% endfor %}{% if m.tie %}<br>{{ m.tie }}{% endif %}</p>{% endif %}
+    {% endif %}
+    <p class="card-foot">{% if finished and m.source %}<span class="source">{{ m.source }}</span>{% endif %}<a href="{{ m.url }}">Match details</a></p>
+  </li>
+{% endmacro %}

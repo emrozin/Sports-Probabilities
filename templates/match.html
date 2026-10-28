@@ -45,6 +45,31 @@
 
 {% if moved %}{{ movement_line(moved, finished) }}{% endif %}
 
+{% if news %}
+<section class="detail-section team-news">
+  <h2>Team news</h2>
+  <p class="section-note">Who's injured, suspended or doubtful, from the Fantasy Premier League feed ({{ news.date }}). Regulars (started at least half their team's games) come first. The model doesn't use this yet: there isn't a history of pre-match team news to test it on, so it's being collected first.</p>
+  <div class="form-columns">
+    {% for s in news.sides %}
+    <div>
+      <h3>{{ team_link(s.team) }}</h3>
+      {% if s.players %}
+      <ul class="news-list">
+        {% for p in s.players %}
+        <li class="{{ 'news-out' if p.out else 'news-doubt' }}"><strong>{{ p.name }}</strong> <span class="muted small">{{ p.position }}{% if p.regular %} &middot; regular, {{ p.starts }} starts{% endif %}</span>
+          <span class="news-status">{% if p.out %}Out{% elif p.chance is not none %}{{ p.chance }}% to play{% else %}Doubtful{% endif %}</span>
+          {% if p.news %}<span class="muted small block">{{ p.news }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="note">No one listed out or doubtful.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 {% if goals %}
 <section class="detail-section">
   <h2>Every possible score</h2>

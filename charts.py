@@ -89,7 +89,7 @@ def record_chart(weeks: list[dict], benchmark: str) -> dict | None:
 def movement_chart(snaps, home: str, away: str) -> dict | None:
     """How the market's (and the model's) chance for one team moved before a game. snaps: rows with
     taken_at ('open' or 'YYYY-MM-DD HH:MM'), market_home, model_home, oldest first. The team shown is
-    the one the latest model (or market) favours. None with fewer than two market snapshots."""
+    the one the latest model (or market) favors. None with fewer than two market snapshots."""
     snaps = [s for s in snaps if s.get("market_home") is not None and not math.isnan(s["market_home"])]
     if len(snaps) < 2:
         return None
@@ -132,3 +132,44 @@ def movement_chart(snaps, home: str, away: str) -> dict | None:
             "model_last": modelled[-1] if modelled else None,
             "first": f"{first:.0f}%", "now": f"{end:.0f}%", "change": end - first,
             "toward_model": (modelled[-1]["model"] - first) * (end - first) > 0 if modelled and abs(end - first) >= 1 else None}
+
+
+def calibration_chart(live: tuple, past: tuple | None = None, two_way: bool = True, past_from: str = "") -> dict | None:
+    """Is the model honest? Predictions grouped by the chance they gave, against how often it happened.
+    live / past: (chances, happened) arrays. two_way: each game's favorite's chance (50-100%) in
+    10-point groups; otherwise every chance (0-100%), e.g. the Premier League's three outcomes.
+    Groups with fewer than MIN_GROUP predictions are left out of the chart (too noisy)."""
+    lo = 50 if two_way else 0
+    edges = list(range(lo, 101, 10))
+
+    def groups(pair, minimum):
+        if pair is None:
+            return []
+        p, hit = np.asarray(pair[0], float) * 100, np.asarray(pair[1], float)
+        if two_way:            # look at each game from its favorite's side
+            flip = p < 50
+            p, hit = np.where(flip, 100 - p, p), np.where(flip, 1 - hit, hit)
+        out = []
+        for a, b in zip(edges[:-1], edges[1:]):
+            mask = (p >= a) & ((p < b) if b < 100 else (p <= b))
+            n = int(mask.sum())
+            if n >= minimum:
+                out.append({"range": f"{a}–{b}%", "n": n, "predicted": float(p[mask].mean()), "actual": float(hit[mask].mean() * 100)})
+        return out
+    live_groups, past_groups = groups(live, 5), groups(past, 30)
+    if not live_groups and not past_groups:
+        return None
+    pos = lambda v: round((v - lo) / (100 - lo) * 100, 2)
+    for g in live_groups + past_groups:
+        g["x"], g["y"] = pos(g["predicted"]), 100 - pos(min(max(g["actual"], lo), 100))
+        g["tip"] = f"{g['range']}: predicted {g['predicted']:.0f}%, happened {g['actual']:.0f}% ({g['n']} {'games' if two_way else 'predictions'})"
+    ticks = [{"label": f"{v}%" if two_way or v % 20 == 0 else "", "pos": pos(v)} for v in range(lo, 101, 10)]
+    rows = []
+    for a, b in zip(edges[:-1], edges[1:]):
+        label = f"{a}–{b}%"
+        lv = next((g for g in live_groups if g["range"] == label), None)
+        pv = next((g for g in past_groups if g["range"] == label), None)
+        if lv or pv:
+            rows.append({"range": label, "live": lv, "past": pv})
+    return {"live": live_groups, "past": past_groups, "ticks": ticks, "rows": rows, "two_way": two_way,
+            "past_from": past_from, "live_n": int(len(live[0])) if live is not None else 0}

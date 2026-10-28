@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "nba/macros.html" import game_card, scorecard %}
-{% from "charts.html" import record_line %}
+{% from "charts.html" import record_line, calibration as calibration_section %}
 {% block title %}Track record | NBA probabilities{% endblock %}
 {% block content %}
 <div class="intro">
@@ -11,10 +11,12 @@
   <h2>So far</h2>
   {{ scorecard(overall) }}
   {% if record_chart %}{{ record_line(record_chart, 'The record so far, week by week') }}{% endif %}
+  {% if calibration %}{{ calibration_section(calibration) }}{% endif %}
   {% for w in weeks %}
   <section class="day"><h2>{{ w.label }}</h2>{{ scorecard(w.summary) }}<ul class="matches">{% for g in w.games %}{{ game_card(g) }}{% endfor %}</ul></section>
   {% endfor %}
 {% else %}
   <section class="empty"><h2>No finished live predictions yet</h2><p>Forecasts are saved before tip-off and appear here once the games are played.</p></section>
+  {% if calibration %}{{ calibration_section(calibration) }}{% endif %}
 {% endif %}
 {% endblock %}

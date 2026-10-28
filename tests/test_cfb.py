@@ -262,3 +262,52 @@ def test_conference_odds_page_without_odds(cfb_project):
     import app
     page = TestClient(app.app).get("/cfb/conference-odds/")
     assert page.status_code == 200 and "No conference odds yet" in page.text
+
+
+def test_college_football_game_pages(cfb_project):
+    import app
+    client = TestClient(app.app)
+    conn = sqlite3.connect(cfb_project / "data" / "sports.db")
+    upcoming = conn.execute("""SELECT i.source_game_id FROM cfb_game_info i JOIN games g ON g.id = i.game_id
+                               JOIN predictions p ON p.game_id = g.id AND p.model_name = 'cfb_points'
+                               WHERE g.status = 'scheduled' LIMIT 1""").fetchone()
+    done = conn.execute("""SELECT i.source_game_id FROM cfb_game_info i JOIN games g ON g.id = i.game_id
+                           WHERE g.status = 'final' ORDER BY g.date DESC LIMIT 1""").fetchone()[0]
+    conn.close()
+    assert upcoming is not None
+    page = client.get(f"/cfb/game/{upcoming[0]}/").text
+    assert "Why the model picks" in page and "Quarterbacks" in page and "Head to head" in page
+    finished = client.get(f"/cfb/game/{done}/").text
+    assert "Form going into the game" in finished and "Why the model picks" not in finished
+    assert client.get("/cfb/game/nope/").status_code == 404
+
+
+def test_early_season_ratings_lean_on_last_season_pulled_toward_the_conference(cfb_project):
+    from cfb.model import PRESEASON, current_fit, early_season, season_prior
+    conn = sqlite3.connect(cfb_project / "data" / "sports.db")
+    games = load_games(conn)
+    conn.close()
+    assert early_season("2026-09-12") and not early_season("2026-11-14") and not early_season("2027-01-05")
+    prior, start_fit = season_prior(games, 2026, PRESEASON["carry"])
+    r = start_fit["ratings"]
+    sec = [t for t, c in TEAMS if c == "SEC"]
+    strength = (r["offense"] + r["defense"]).loc[sec]
+    pulled = (prior["offense"] + prior["defense"]).loc[sec]
+    assert pulled.std() < strength.std()                             # closer together, around the conference's average
+    assert pulled.mean() == pytest.approx(strength.mean(), abs=1e-9)
+    first_week = current_fit(games, "2026-08-29", 2026)              # no games yet: the preseason ratings
+    assert first_week["ratings"].loc[sec, "offense"].tolist() == pytest.approx(prior.loc[sec, "offense"].tolist())
+    later = current_fit(games, "2026-09-20", 2026)                   # three weeks played: the season's games count too
+    assert set(prior.index) <= set(later["ratings"].index)
+    assert not later["ratings"].loc[sec, "offense"].round(6).equals(prior.loc[sec, "offense"].round(6))
+    assert later["inexperience"] == start_fit["inexperience"]        # held at its preseason value
+
+
+def test_preseason_backtest_survives_a_week_of_neutral_site_games(cfb_project):
+    conn = sqlite3.connect(cfb_project / "data" / "sports.db")
+    games = load_games(conn)
+    conn.close()
+    first = games["season"].eq(2026) & games["week"].eq(1)
+    games.loc[first, "neutral_site"] = 1                             # opening week all on neutral fields
+    results = backtest(games, 2026, carry=0.8, prior_weight=3, switch="11-01")
+    assert results["model_home"].between(0, 1).all() and len(results) > 0

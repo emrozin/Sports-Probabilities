@@ -24,7 +24,7 @@ from nba.model import MARGIN_SD, breakdown, elo_benchmark, fit, lineup_strength,
 from nba.players import (PROPS, STAT_NAMES, STATS, add_rates, chance_at_least, likeliest_props, prop_chances)
 from nba.predict_upcoming import MODEL_NAME
 from nba.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
-from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability, why
+from web import BASE, ROOT, day_label, disk_cached, edge, ordinal, signed_number, slugify, templates, typical_probability, why
 
 DB_PATH = ROOT / "data" / "sports.db"
 router = APIRouter(prefix="/nba")
@@ -157,16 +157,34 @@ def players() -> pd.DataFrame:
 
 
 def current() -> dict | None:
-    """Today's model, each player's latest line, and who's out (cached for the day)."""
+    """Today's model, each player's latest line, and who's out (cached for the day, and on disk until
+    the database changes: fitting needs every player line, which takes a while to load)."""
     d = data()
     today = date.today().isoformat()
     if d.get("current_day") != today:
-        games, lines = d["games"], players()
-        model = fit(games, lines, today) if not games.empty and not lines.empty else None
-        latest = live.latest_lines(lines) if not lines.empty else pd.DataFrame(columns=["team", "name", "position", "date", "minutes_after"])
-        d["current"] = {"model": model, "latest": latest, "out": live.unavailable(d["injuries"])} if model else None
+        def make():
+            games, lines = d["games"], players()
+            model = fit(games, lines, today) if not games.empty and not lines.empty else None
+            latest = live.latest_lines(lines) if not lines.empty else pd.DataFrame(columns=["team", "name", "position", "date", "minutes_after"])
+            return {"model": model, "latest": latest} if model else None
+        found = disk_cached(DB_PATH.parent / "cache", "nba_current", (d["stamp"], today, "v2"), make) if DB_PATH.exists() else None
+        d["current"] = {**found, "out": live.unavailable(d["injuries"])} if found else None
         d["current_day"] = today
     return d["current"]
+
+
+def box_lines(game_ids) -> pd.DataFrame:
+    """The box score lines of a few games (for results next to projections), straight from the database."""
+    ids = [int(i) for i in game_ids]
+    if not ids or not DB_PATH.exists():
+        return pd.DataFrame(columns=["game_id", "team", "player_id", "name", "minutes", *STATS])
+    with connect() as conn:
+        out = []
+        for k in range(0, len(ids), 500):
+            part = ids[k:k + 500]
+            out.append(pd.read_sql(f"""SELECT game_id, team, player_id, name, minutes, {', '.join(STATS)} FROM nba_player_games
+                                       WHERE game_id IN ({','.join('?' * len(part))})""", conn, params=part))
+    return pd.concat(out, ignore_index=True)
 
 
 def latest_season() -> int | None:
@@ -253,14 +271,14 @@ def prop_rows(proj: pd.DataFrame, games: pd.DataFrame, n_by: str, n: int) -> lis
     chances = prop_chances(proj)
     chances = chances.merge(games[["id", "date", "home", "away", "source_game_id", "status"]], left_on="game_id", right_on="id")
     picks = likeliest_props(chances, n_by, n)
-    lines = players()
+    lines = box_lines(picks.loc[picks["status"] == "final", "game_id"].unique())
     actual = lines.set_index(["game_id", "player_id"]) if not lines.empty else None
     rows = []
     for r in picks.itertuples():
         hit = None
         if r.status == "final" and actual is not None and (r.game_id, str(r.player_id)) in actual.index:
             hit = bool(actual.loc[(r.game_id, str(r.player_id)), r.stat] >= r.line)
-        rows.append({"name": r.name, "team": abbreviation(r.team), "position": "", "prop": f"{r.line}+ {STAT_NAMES[r.stat]}",
+        rows.append({"name": r.name, "player_url": player_url(r.player_id), "team": abbreviation(r.team), "position": "", "prop": f"{r.line}+ {STAT_NAMES[r.stat]}",
                      "chance": f"{r.chance * 100:.0f}%", "url": game_url(r.source_game_id), "hit": hit,
                      "matchup": f"{abbreviation(r.away)} at {abbreviation(r.home)}", "date": r.date})
     return rows
@@ -304,8 +322,104 @@ def props_page(request: Request):
             days.append({"label": day_label(day), "props": rows, "upcoming": day >= today,
                          "hits": sum(r["hit"] for r in done), "settled": len(done)})
     days.sort(key=lambda x: (not x["upcoming"], x["label"]))
+    vs_book, record = sportsbook_props(games, today)
     return render(request, "props.html", {"active": "props", "days": days, "props_per_day": PROPS_PER_DAY,
+                                          "vs_book": vs_book, "book_record": record,
                                           "lines": {STAT_NAMES[s]: ", ".join(f"{x}+" for x in v) for s, v in PROPS.items()}})
+
+
+def sportsbook_props(games: pd.DataFrame, today: str) -> tuple[list[dict], dict | None]:
+    """The model against DraftKings' prop lines (nba/prop_lines.py): today's and tomorrow's biggest
+    disagreements, and the record on settled lines."""
+    from nba.prop_lines import compare, scores
+    with connect() as conn:
+        if conn.execute("SELECT name FROM sqlite_master WHERE name = 'nba_prop_lines'").fetchone() is None:
+            return [], None
+        df = compare(conn)
+    if df.empty:
+        return [], None
+    record = scores(df)
+    if record:
+        record = {**record, "model": f"{record['model']:.3f}", "market": f"{record['market']:.3f}",
+                  "roi": f"{record['roi'] * 100:+.1f}%" if record["roi"] is not None else "–",
+                  "range": (f"{record['roi_low'] * 100:+.1f}% to {record['roi_high'] * 100:+.1f}%" if record["roi"] is not None else ""),
+                  "expected": f"{record['expected'] * 100:+.1f}%" if record["expected"] is not None else "–",
+                  "by_stat": [{"stat": STAT_NAMES[k], "lines": v["lines"], "model": f"{v['model']:.3f}", "market": f"{v['market']:.3f}"}
+                              for k, v in record["by_stat"].items()]}
+    ahead = df[(df["status"] == "scheduled") & (df["date"] >= today)].copy()
+    ahead["gap"] = ahead["model_over"] - ahead["market_over"]
+    ahead = ahead.reindex(ahead["gap"].abs().sort_values(ascending=False).index).head(15)
+    info = games.set_index("source_game_id")
+    rows = []
+    for r in ahead.itertuples():
+        g = info.loc[r.game] if r.game in info.index else None
+        over = r.gap > 0
+        price = r.over_price if over else r.under_price
+        chance = r.model_over if over else 1 - r.model_over
+        rows.append({"name": r.name, "player_url": player_url(r.player_id), "team": abbreviation(r.team),
+                     "prop": f"{'Over' if over else 'Under'} {r.line:g} {STAT_NAMES[r.stat]}", "projected": f"{r.projected:.1f}",
+                     "model": f"{chance * 100:.0f}%", "market": f"{(r.market_over if over else 1 - r.market_over) * 100:.0f}%",
+                     "price": betting_american(price), "edge": f"{(chance * price - 1) * 100:+.0f}%",
+                     "matchup": f"{abbreviation(g['away'])} at {abbreviation(g['home'])}" if g is not None else "",
+                     "url": game_url(r.game)})
+    return rows, record
+
+
+def betting_american(price: float) -> str:
+    from betting import decimal_to_american
+    return decimal_to_american(price)
+
+
+FORM_GAMES = 10       # "going into the game": each team's last 10, the NBA's usual measure
+H2H_SHOWN = 10        # the most recent meetings listed (the record counts all of them)
+
+
+def outcome_letter(team_score, opponent_score) -> str:
+    return "W" if team_score > opponent_score else "L"
+
+
+def form(games: pd.DataFrame, team: str, before: str, game_id) -> dict:
+    """A team going into a game: its last FORM_GAMES games (oldest first), its record in them, its
+    regular-season record so far, and days of rest."""
+    own = games[((games["home"] == team) | (games["away"] == team)) & (games["status"] == "final")
+                & (games["date"] < before)].sort_values(["date", "id"])
+    if own.empty:
+        return {"games": [], "record": None}
+    rows = []
+    for g in own.tail(FORM_GAMES).itertuples():
+        at_home = g.home == team
+        ts, os_ = (g.home_score, g.away_score) if at_home else (g.away_score, g.home_score)
+        rows.append({"outcome": outcome_letter(ts, os_), "score": f"{int(ts)}–{int(os_)}", "venue": "vs" if at_home else "at",
+                     "opponent": g.away if at_home else g.home, "url": game_url(g.source_game_id),
+                     "date": day_label(g.date)})
+    season = int(games.loc[games["id"] == game_id, "season"].iloc[0]) if (games["id"] == game_id).any() else None
+    this_season = own[(own["season"] == season) & (own["season_type"] == "regular")] if season is not None else own.iloc[0:0]
+    won = lambda df: int(((df["home"] == team) & (df["home_score"] > df["away_score"])).sum()
+                         + ((df["away"] == team) & (df["away_score"] > df["home_score"])).sum())
+    rest = (pd.Timestamp(before) - pd.Timestamp(own["date"].iloc[-1])).days
+    return {"games": rows, "last": f"{sum(r['outcome'] == 'W' for r in rows)}–{sum(r['outcome'] == 'L' for r in rows)}",
+            "season": f"{won(this_season)}–{len(this_season) - won(this_season)}" if len(this_season) else None,
+            "rest": rest, "b2b": rest == 1, "opener": season is not None and int(own["season"].iloc[-1]) != season}
+
+
+def head_to_head(games: pd.DataFrame, a: str, b: str, before: str, game_id) -> dict:
+    """Every earlier meeting of two teams in the data (since 2002-03): the record, this season's
+    meetings, and the most recent H2H_SHOWN."""
+    met = games[(((games["home"] == a) & (games["away"] == b)) | ((games["home"] == b) & (games["away"] == a)))
+                & (games["status"] == "final") & (games["date"] < before)].sort_values(["date", "id"], ascending=False)
+    wins = {a: 0, b: 0}
+    meetings = []
+    for g in met.itertuples():
+        winner = g.home if g.home_score > g.away_score else g.away
+        wins[winner] += 1
+        if len(meetings) < H2H_SHOWN:
+            meetings.append({"date": day_label(g.date, with_year=True), "home": g.home, "away": g.away,
+                             "score": f"{int(g.away_score)}–{int(g.home_score)}", "winner": winner,
+                             "stage": SEASON_TYPE_LABEL.get(g.season_type, ""), "url": game_url(g.source_game_id)})
+    playoff = met[met["season_type"] == "playoffs"]
+    return {"meetings": meetings, "count": len(met), "wins_a": wins[a], "wins_b": wins[b], "a": a, "b": b,
+            "first": season_label(int(met["season"].min())) if len(met) else None,
+            "playoff_games": len(playoff)}
 
 
 ABSENCE_MINUTES = 10   # absences worth explaining: players who usually play at least this much
@@ -352,7 +466,7 @@ def game_page(request: Request, source_id: str):
         raise HTTPException(status_code=404)
     g = with_predictions(found).iloc[0]
     card = game_card(next(with_predictions(found).itertuples()))
-    lines = players()
+    lines = box_lines([g["id"]]) if g["status"] == "final" else box_lines([])
     proj = d["projections"]
     proj = proj[proj["game_id"] == g["id"]].set_index("player_id") if not proj.empty else pd.DataFrame()
     cur = current()
@@ -365,9 +479,15 @@ def game_page(request: Request, source_id: str):
             box = lines[(lines["game_id"] == g["id"]) & (lines["team"] == team) & (lines["minutes"] > 0)].sort_values("minutes", ascending=False)
             for r in box.itertuples():
                 p = proj.loc[r.player_id] if r.player_id in proj.index else None
-                rows.append({"name": r.name, "minutes": f"{r.minutes:.0f}",
-                             "stats": {s: (f"{getattr(r, s):.0f}" if pd.notna(getattr(r, s)) else "–") for s in STATS},
+                rows.append({"name": r.name, "url": player_url(r.player_id), "minutes": f"{r.minutes:.0f}", "played": True,
+                             "proj_minutes": f"{p['minutes']:.0f}" if p is not None else None,
+                             "stats": {s: (f"{getattr(r, s):.0f}" if pd.notna(getattr(r, s)) else "0") for s in STATS},
                              "proj": {s: f"{p[s]:.1f}" for s in STATS} if p is not None else None})
+            if not proj.empty:      # projected, but didn't play
+                missed = proj[(proj["team"] == team) & ~proj.index.isin(box["player_id"])]
+                for pid, p in missed.sort_values("minutes", ascending=False).iterrows():
+                    rows.append({"name": p["name"], "url": player_url(pid), "minutes": "0", "played": False, "proj_minutes": f"{p['minutes']:.0f}",
+                                 "stats": None, "proj": {s: f"{p[s]:.1f}" for s in STATS}})
             outs = []
         else:
             lineup = (live.expected_lineup(team, cur["latest"], d["rosters"], cur["out"], g["date"])
@@ -378,16 +498,21 @@ def game_page(request: Request, source_id: str):
                 if p is None and r.minutes < 1:
                     continue
                 rating = cur["model"]["ratings"].get(r.player_id) if cur else None
-                rows.append({"name": r.name, "minutes": f"{p['minutes'] if p is not None else r.minutes:.0f}",
+                rows.append({"name": r.name, "url": player_url(r.player_id), "minutes": f"{p['minutes'] if p is not None else r.minutes:.0f}",
                              "rating": signed_number(rating, 1) if rating is not None else "–",
                              "proj": {s: f"{p[s]:.1f}" for s in STATS} if p is not None else None})
             outs = injury_notes(team)
-        sides.append({"team": team, "rows": rows, "out": outs})
+        side_proj = proj[proj["team"] == team] if not proj.empty else proj
+        total = {"proj": f"{side_proj['points'].sum():.0f}" if len(side_proj) else None,
+                 "actual": int(g[f"{side}_score"]) if g["status"] == "final" else None}
+        sides.append({"team": team, "rows": rows, "out": outs, "total": total})
     props = prop_rows(proj.reset_index().assign(game_id=g["id"]), games, "game_id", PROPS_PER_GAME) if not proj.empty else []
     reasons = why_pick(g, lineups, cur) if g["status"] != "final" and cur and len(lineups) == 2 else None
+    forms = {side: form(games, g[side], g["date"], g["id"]) for side in ("away", "home")}
+    h2h = head_to_head(games, g["away"], g["home"], g["date"], g["id"])
     with connect() as conn:
         moved = betting.movement_chart(conn, int(g["id"]), g["home"], g["away"])
-    return render(request, "game.html", {"active": None, "g": card, "date": day_label(g["date"], with_year=True), "why": reasons, "moved": moved,
+    return render(request, "game.html", {"active": None, "g": card, "date": day_label(g["date"], with_year=True), "why": reasons, "moved": moved, "forms": forms, "h2h": h2h,
                                          "sides": sides, "props": props, "finished": g["status"] == "final",
                                          "props_per_game": PROPS_PER_GAME})
 
@@ -663,8 +788,14 @@ def track_record(request: Request):
             chart_weeks.append({"label": f"{pd.Timestamp(w):%-d %b}", "model": np.where(won, g["model_home"], 1 - g["model_home"]),
                                 "benchmark": np.where(won, g[bench], 1 - g[bench])})
         chart = record_chart(chart_weeks, "the betting market" if use_market else "a simple Elo rating")
+    from charts import calibration_chart
+    from web import calibration_pairs
+    past = d["games"][(d["games"]["status"] == "final") & (d["games"]["season"] >= HELD_OUT_FROM)].merge(
+        d["predictions"][d["predictions"]["source"] == "Backtest"], on="id")
+    calib = calibration_chart(calibration_pairs(df) if not df.empty else (np.array([]), np.array([])),
+                              calibration_pairs(past), past_from=f"{season_label(HELD_OUT_FROM)}")
     return render(request, "track_record.html", {"active": "track", "weeks": weeks, "overall": summary(df) if not df.empty else None,
-                                                 "record_url": RECORD_URL, "record_chart": chart})
+                                                 "record_url": RECORD_URL, "record_chart": chart, "calibration": calib})
 
 
 @router.get("/backtest/", response_class=HTMLResponse)
@@ -700,3 +831,71 @@ def backtest_page(request: Request):
                      "model_typical": typical_probability(held["model_ll"].mean()),
                      "elo_typical": typical_probability(held["elo_ll"].mean()),
                      "favorite": f"{((held['model_home'] > 0.5) == won_held).mean() * 100:.1f}%"}})
+
+
+# ---------------------------------------------------------------- player pages
+
+def player_url(player_id) -> str:
+    return f"{BASE}/nba/player/{player_id}/"
+
+
+templates.env.globals["nba_player_url"] = player_url
+GAME_LOG = 15
+
+
+@router.get("/player/{player_id}/", response_class=HTMLResponse)
+def player_page(request: Request, player_id: str):
+    d = data()
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=404)
+    with connect() as conn:
+        log = pd.read_sql(f"""SELECT p.game_id, p.team, p.name, p.position, p.minutes, p.did_not_play, p.reason,
+                                     {', '.join('p.' + s for s in STATS)}, g.date, g.season, i.season_type, i.source_game_id,
+                                     h.name AS home, a.name AS away, g.home_score, g.away_score
+                              FROM nba_player_games p JOIN games g ON g.id = p.game_id
+                              JOIN nba_game_info i ON i.game_id = g.id
+                              JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id
+                              WHERE p.player_id = ? ORDER BY g.date""", conn, params=(player_id,))
+        has_proj = conn.execute("SELECT name FROM sqlite_master WHERE name = 'nba_player_projections'").fetchone()
+        proj = pd.read_sql("SELECT * FROM nba_player_projections WHERE player_id = ?", conn, params=(player_id,)) if has_proj else pd.DataFrame()
+    if log.empty and proj.empty:
+        raise HTTPException(status_code=404)
+    latest = log.iloc[-1] if not log.empty else proj.iloc[-1]
+    team = latest["team"]
+    played = log[log["minutes"].fillna(0) > 0]
+    seasons = []
+    for season, part in sorted(played.groupby("season"), key=lambda kv: kv[0], reverse=True)[:3]:
+        reg = part[part["season_type"] == "regular"]
+        if reg.empty:
+            continue
+        seasons.append({"label": season_label(int(season)), "games": len(reg), "minutes": f"{reg['minutes'].mean():.1f}",
+                        **{s: f"{reg[s].mean():.1f}" for s in STATS}})
+    by_game = proj.set_index("game_id") if not proj.empty else pd.DataFrame()
+    games_log = []
+    for r in log.iloc[::-1].head(GAME_LOG).itertuples():
+        at_home = r.home == r.team
+        opp = r.away if at_home else r.home
+        won = (r.home_score > r.away_score) == at_home
+        p = by_game.loc[r.game_id] if r.game_id in by_game.index else None
+        games_log.append({"date": day_label(r.date), "opponent": opp, "venue": "vs" if at_home else "at", "url": game_url(r.source_game_id),
+                          "result": f"{'W' if won else 'L'} {int(max(r.home_score, r.away_score))}–{int(min(r.home_score, r.away_score))}",
+                          "played": bool(r.minutes and r.minutes > 0),
+                          "dnp": r.reason if isinstance(r.reason, str) and r.reason else "Didn't play",
+                          "minutes": f"{r.minutes:.0f}" if r.minutes else "0",
+                          "stats": {s: f"{getattr(r, s):.0f}" if pd.notna(getattr(r, s)) else "0" for s in STATS},
+                          "proj": {s: f"{p[s]:.1f}" for s in ["minutes", *STATS]} if p is not None else None})
+    upcoming = []
+    if not proj.empty:
+        games = d["games"].set_index("id")
+        for r in proj.itertuples():
+            if r.game_id in games.index and games.at[r.game_id, "status"] == "scheduled":
+                g = games.loc[r.game_id]
+                upcoming.append({"date": day_label(g["date"]), "matchup": f"{g['away']} at {g['home']}", "url": game_url(g["source_game_id"]),
+                                 "minutes": f"{r.minutes:.0f}", **{s: f"{getattr(r, s):.1f}" for s in STATS}})
+    cur = current()
+    rating = cur["model"]["ratings"].get(str(player_id)) if cur else None
+    injury = d["injuries"][d["injuries"]["player_id"].astype(str) == str(player_id)]
+    return render(request, "player.html", {
+        "active": None, "name": latest["name"], "team": team, "position": latest["position"] if isinstance(latest.get("position"), str) else "",
+        "rating": signed_number(rating, 1) if rating is not None else None, "seasons": seasons, "log": games_log,
+        "upcoming": upcoming, "injury": injury.iloc[0].to_dict() if not injury.empty else None})

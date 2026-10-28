@@ -14,11 +14,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 import colors
-from cbb.model import MARGIN_SD, NON_D1, elo_benchmark, fit, load_games, window
+from cbb.model import MARGIN_SD, NON_D1, current_fit, elo_benchmark, fit, load_games, window
 from cbb.predict_upcoming import MODEL_NAME
 from cbb.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
 from cfb.site import kickoff_label, line_text, two_way
 from charts import chance_bars, line_chart
+import betting
+import college
 import espn
 from web import BASE, ROOT, edge, day_label, ordinal, signed_number, slugify, templates, typical_probability
 
@@ -39,6 +41,10 @@ def connect():
 
 def season_label(season: int) -> str:
     return f"{season}–{(season + 1) % 100:02d}"
+
+
+def game_url(source_id) -> str | None:
+    return f"{BASE}/cbb/game/{source_id}/" if isinstance(source_id, str) and source_id else None
 
 
 def team_url(team: str, season: int | None = None) -> str:
@@ -117,7 +123,8 @@ def game_card(g, current_team: str | None = None) -> dict:
             "model": two_way(g.model_home) if pd.notna(getattr(g, "model_home", np.nan)) else None,
             "source": g.source if isinstance(getattr(g, "source", None), str) else None,
             "model_line": line_text(margin, home, away),
-            "model_total": f"{g.exp_home + g.exp_away:.0f}" if margin is not None else None}
+            "model_total": f"{g.exp_home + g.exp_away:.0f}" if margin is not None else None,
+            "url": game_url(getattr(g, "source_game_id", None))}
     market_home = getattr(g, "market_home", np.nan)
     if pd.notna(market_home):
         card["market"] = two_way(market_home)
@@ -227,8 +234,7 @@ def current_model() -> dict | None:
         return None
     if d.get("model_day") != today:
         played = d["games"][d["games"]["status"] == "final"]
-        train = window(played, today)
-        d["model"] = fit(train, today, latest_season()) if not train.empty else None
+        d["model"] = current_fit(d["games"], today, latest_season()) if not played.empty else None
         d["model_day"] = today
     return d["model"]
 
@@ -240,10 +246,16 @@ def d1_teams(season: int) -> list[str]:
 
 
 def team_conference(team: str, season: int) -> str | None:
-    s = data()["games"]
-    s = s[s["season"] == season]
-    both = pd.concat([s.loc[s["home_team"] == team, "home_conference"], s.loc[s["away_team"] == team, "away_conference"]]).dropna()
-    return both.mode().iloc[0] if not both.empty else None
+    """The team's conference that season (its most common one), from a lookup built once per season."""
+    d = data()
+    key = ("conferences", season)
+    if key not in d:
+        games = d["games"]
+        s = games[games["season"] == season]
+        both = pd.concat([s[["home_team", "home_conference"]].set_axis(["team", "conf"], axis=1),
+                          s[["away_team", "away_conference"]].set_axis(["team", "conf"], axis=1)]).dropna()
+        d[key] = both.groupby("team")["conf"].agg(lambda c: c.mode().iloc[0]).to_dict() if len(both) else {}
+    return d[key].get(team)
 
 
 def centered(model: dict, season: int) -> pd.DataFrame:
@@ -461,8 +473,15 @@ def track_record(request: Request):
             chart_weeks.append({"label": f"{pd.Timestamp(w):%-d %b}", "model": np.where(won, g["model_home"], 1 - g["model_home"]),
                                 "benchmark": np.where(won, g["elo_home"], 1 - g["elo_home"])})
         chart = record_chart(chart_weeks, "a simple Elo rating")
+    from charts import calibration_chart
+    from web import calibration_pairs
+    games = d1(d["games"])
+    past = games[(games["status"] == "final") & (games["season"] >= HELD_OUT_FROM)].merge(
+        d["predictions"][d["predictions"]["source"] == "Backtest"], on="id")
+    calib = calibration_chart(calibration_pairs(df) if not df.empty else (np.array([]), np.array([])),
+                              calibration_pairs(past), past_from=f"{HELD_OUT_FROM}")
     return render(request, "track_record.html", {"active": "track", "weeks": weeks, "overall": summary(df) if not df.empty else None,
-                                                 "record_url": RECORD_URL, "record_chart": chart})
+                                                 "record_url": RECORD_URL, "record_chart": chart, "calibration": calib})
 
 
 @router.get("/backtest/", response_class=HTMLResponse)
@@ -496,3 +515,61 @@ def backtest_page(request: Request):
                      "model_typical": typical_probability(held["model_ll"].mean()),
                      "elo_typical": typical_probability(held["elo_ll"].mean()),
                      "favorite": f"{((held['model_home'] > 0.5) == won_held).mean() * 100:.1f}%"}})
+
+
+# ---------------------------------------------------------------- game pages
+
+@router.get("/game/{source_id}/", response_class=HTMLResponse)
+def game_page(request: Request, source_id: str):
+    d = data()
+    games = d["games"]
+    found = games[games["source_game_id"].astype(str) == source_id]
+    if found.empty:
+        raise HTTPException(status_code=404)
+    g = next(with_predictions(found).itertuples())
+    card = game_card(g)
+    finished = g.status == "final"
+    reasons = None
+    model = current_model() if not finished else None
+    if model is not None and pd.notna(getattr(g, "model_home", np.nan)):
+        early = g.date[5:] >= "07-01" and g.date[5:] < "12-15"
+        reasons = college.points_why(model, g.home, g.away, g.home_team, g.away_team, bool(g.neutral_site),
+                                     float(g.model_home), getattr(g, "market_home", None),
+                                     note=("Early in the season the ratings lean on each team's preseason rating: last "
+                                           "season's, pulled toward its conference's average, more for teams that lost "
+                                           "more of last season's minutes.") if early else None)
+    with connect() as conn:
+        moved = betting.movement_chart(conn, int(g.id), g.home_team, g.away_team)
+    url = lambda row: game_url(row.source_game_id)
+    stage = lambda row: row.notes if isinstance(row.notes, str) else ""
+    return templates.TemplateResponse(request, "college_game.html", {
+        "sport": "cbb", "active": None, "sport_name": "College basketball", "g": card, "finished": finished,
+        "date": day_label(g.date, with_year=True), "why": reasons, "moved": moved, "first_season": "2002-03",
+        "forms": {side: college.form(games, getattr(g, f"{side}_team"), g.date, int(g.season), url, 10,
+                                     "home_team", "away_team") for side in ("away", "home")},
+        "h2h": college.head_to_head(games, g.away_team, g.home_team, g.date, url, "home_team", "away_team", stage=stage)})
+
+
+# ---------------------------------------------------------------- March Madness
+
+@router.get("/tournament/", response_class=HTMLResponse)
+def tournament_page(request: Request):
+    import json
+    from cbb import tournament
+    d = data()
+    season = latest_season()
+    odds = None
+    if season is not None and tournament.bracket_path(season).exists():
+        model = current_model()
+        table = tournament.current_odds(d["games"], season, model) if model else None
+        if table is not None:
+            pct = lambda v: "<1%" if 0 < v < 0.005 else ("✓" if v >= 0.9995 else f"{v * 100:.0f}%")
+            odds = [{"team": r["team"], "url": team_url(r["team"]), "seed": int(r["seed"]), "region": r["region"],
+                     "first_four": bool(r["first_four"]), "rounds": [pct(r[name]) for name in tournament.ROUNDS[1:]]}
+                    for r in table.to_dict("records")]
+    backtest = json.loads(tournament.RECORD_PATH.read_text()) if tournament.RECORD_PATH.exists() else None
+    if backtest:
+        backtest["seasons"] = [{**x, "label": season_label(x["season"])} for x in reversed(backtest["seasons"])]
+    return render(request, "tournament.html", {"active": "tournament", "odds": odds, "rounds": tournament.ROUNDS[1:],
+                                               "season": season_label(season) if season is not None else None,
+                                               "backtest": backtest, "bracket_file": f"cbb/brackets/bracket_{season}.csv"})

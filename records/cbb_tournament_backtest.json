@@ -1,0 +1,152 @@
+{
+ "loss": 0.25616798829192533,
+ "base_loss": 0.3413679337624306,
+ "tournaments": 14,
+ "champion_chance": 0.10970168917398278,
+ "champion_was_favorite": 3,
+ "champion_top4": 8,
+ "calibration": [
+  {
+   "range": "0\u20135%",
+   "n": 3236,
+   "predicted": 0.009385771033933527,
+   "actual": 0.01946847960444994
+  },
+  {
+   "range": "5\u201315%",
+   "n": 867,
+   "predicted": 0.09368818693562077,
+   "actual": 0.08996539792387544
+  },
+  {
+   "range": "15\u201330%",
+   "n": 488,
+   "predicted": 0.21331256473738025,
+   "actual": 0.23565573770491804
+  },
+  {
+   "range": "30\u201350%",
+   "n": 422,
+   "predicted": 0.3998161477918008,
+   "actual": 0.36729857819905215
+  },
+  {
+   "range": "50\u201370%",
+   "n": 339,
+   "predicted": 0.5966968727794977,
+   "actual": 0.6135693215339233
+  },
+  {
+   "range": "70\u201390%",
+   "n": 209,
+   "predicted": 0.8032305581356168,
+   "actual": 0.7990430622009569
+  },
+  {
+   "range": "90\u2013100%",
+   "n": 133,
+   "predicted": 0.9580873261536301,
+   "actual": 0.9398496240601504
+  }
+ ],
+ "seasons": [
+  {
+   "season": 2010,
+   "champion": "UConn",
+   "champion_chance": 0.011974012438468497,
+   "favorite": "Duke",
+   "favorite_chance": 0.20432513934576646
+  },
+  {
+   "season": 2011,
+   "champion": "Kentucky",
+   "champion_chance": 0.1908307187629004,
+   "favorite": "Kentucky",
+   "favorite_chance": 0.1908307187629004
+  },
+  {
+   "season": 2013,
+   "champion": "UConn",
+   "champion_chance": 0.006536144484908731,
+   "favorite": "Louisville",
+   "favorite_chance": 0.2593299476563924
+  },
+  {
+   "season": 2014,
+   "champion": "Duke",
+   "champion_chance": 0.11259955282497627,
+   "favorite": "Kentucky",
+   "favorite_chance": 0.27386744152239134
+  },
+  {
+   "season": 2015,
+   "champion": "Villanova",
+   "champion_chance": 0.05967941394536516,
+   "favorite": "Kansas",
+   "favorite_chance": 0.15382280533605966
+  },
+  {
+   "season": 2016,
+   "champion": "North Carolina",
+   "champion_chance": 0.15637869270170232,
+   "favorite": "North Carolina",
+   "favorite_chance": 0.15637869270170232
+  },
+  {
+   "season": 2017,
+   "champion": "Villanova",
+   "champion_chance": 0.19025263685460805,
+   "favorite": "Villanova",
+   "favorite_chance": 0.19025263685460805
+  },
+  {
+   "season": 2018,
+   "champion": "Virginia",
+   "champion_chance": 0.17598305886141527,
+   "favorite": "Gonzaga",
+   "favorite_chance": 0.20386146985777137
+  },
+  {
+   "season": 2020,
+   "champion": "Baylor",
+   "champion_chance": 0.08154096130702464,
+   "favorite": "Gonzaga",
+   "favorite_chance": 0.30887199548106004
+  },
+  {
+   "season": 2021,
+   "champion": "Kansas",
+   "champion_chance": 0.06039139007242738,
+   "favorite": "Gonzaga",
+   "favorite_chance": 0.2623748534257546
+  },
+  {
+   "season": 2022,
+   "champion": "UConn",
+   "champion_chance": 0.04470560664651907,
+   "favorite": "Alabama",
+   "favorite_chance": 0.16232639734317483
+  },
+  {
+   "season": 2023,
+   "champion": "UConn",
+   "champion_chance": 0.15776672874593906,
+   "favorite": "Houston",
+   "favorite_chance": 0.18305691554062287
+  },
+  {
+   "season": 2024,
+   "champion": "Florida",
+   "champion_chance": 0.13263258112368123,
+   "favorite": "Duke",
+   "favorite_chance": 0.19995397007273788
+  },
+  {
+   "season": 2025,
+   "champion": "Michigan",
+   "champion_chance": 0.1545521496658228,
+   "favorite": "Duke",
+   "favorite_chance": 0.2622185799730106
+  }
+ ]
+}

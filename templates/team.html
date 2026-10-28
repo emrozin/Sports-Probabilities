@@ -7,7 +7,7 @@
 {% block content %}
 <div class="intro">
   <p class="eyebrow"><a href="{{ table_url }}">{% if show_all %}Premier League table{% else %}{{ season }} table{% endif %}</a></p>
-  <h1>{{ team }}</h1>
+  <h1>{{ team }}<button type="button" class="follow" data-follow="epl:{{ team }}" aria-pressed="false"><span aria-hidden="true">★</span> <span class="follow-label">Follow</span></button></h1>
   {% if show_all %}
   <p>Every Premier League match since {{ first_season }}: {{ record.played }} played, {{ record.won }} won, {{ record.drawn }} drawn, {{ record.lost }} lost.</p>
   {% else %}

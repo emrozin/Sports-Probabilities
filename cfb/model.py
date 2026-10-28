@@ -32,6 +32,11 @@ TRAINING_YEARS = 4
 # quarterback's effect is already in his team's rating; it shows when a new or backup starter plays.
 QB_SHRINKAGE = 10.0       # pull quarterback ratings toward average (None = no quarterback ratings)
 INEXPERIENCE_STARTS = 12  # a quarterback's new-starter penalty fades away over his first 12 starts
+# Preseason ratings (version 3; python -m cfb.preseason_test): until 1 November, last season's
+# ratings pulled 20% of the way toward each team's conference average count as 3 games, and the
+# season's own games are added to them. Tuned on 2010-2017 (early-season log loss 0.4165 -> 0.4139);
+# held out (2018-2025): August-September 0.3957 -> 0.3940, whole season 0.4877 -> 0.4861.
+PRESEASON = {"carry": 0.8, "prior_weight": 3, "switch": "11-01"}
 
 
 def load_games(conn) -> pd.DataFrame:
@@ -97,11 +102,16 @@ def load_market(conn) -> pd.DataFrame:
 
 def fit(train: pd.DataFrame, as_of: str, season: int | None = None, half_life_days=HALF_LIFE_DAYS,
         season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE, qb_shrinkage=QB_SHRINKAGE,
-        inexperience_starts=INEXPERIENCE_STARTS) -> dict:
+        inexperience_starts=INEXPERIENCE_STARTS, prior: pd.DataFrame | None = None, prior_weight: float = 0.0,
+        qb_prior: pd.Series | None = None, fixed_inexperience: float | None = None) -> dict:
     """Offense/defense ratings, quarterback ratings, base points and home advantage from finished
     games before as_of. season: the season being predicted (earlier seasons count less).
     qb_shrinkage None leaves quarterbacks out. Built as a sparse matrix: with ~1,500 quarterbacks
-    in four seasons, a dense one would need gigabytes."""
+    in four seasons, a dense one would need gigabytes. prior (offense/defense by team) with
+    prior_weight > 0: ratings are pulled toward the prior instead of toward average, as if it were
+    worth prior_weight games (preseason ratings). qb_prior: quarterback ratings are pulled toward
+    these instead of toward average; fixed_inexperience: the new-starter penalty is held at this
+    value instead of fitted (both for the preseason version, fitted on a few weeks of games)."""
     teams = sorted(set(train["home"]) | set(train["away"]))
     index = {t: i for i, t in enumerate(teams)}
     use_qbs = qb_shrinkage is not None and "home_qb" in train
@@ -143,7 +153,20 @@ def fit(train: pd.DataFrame, as_of: str, season: int | None = None, half_life_da
     if use_new:
         penalty[-1] = 1e-6
     xtw = x.T.multiply(w).tocsr()
-    beta = np.linalg.solve((xtw @ x).toarray() + np.diag(penalty), xtw @ y)
+    rhs = xtw @ y
+    pull = np.zeros(width)             # (weight x value) of each pull toward a prior value
+    if prior is not None and prior_weight > 0:
+        pull[:n] = prior_weight * np.array([prior["offense"].get(t, 0.0) for t in teams])
+        pull[n:2 * n] = prior_weight * np.array([prior["defense"].get(t, 0.0) for t in teams])
+        penalty[:2 * n] += prior_weight
+        penalty[2 * n:2 * n + 2] = 1e-6      # a few weeks of games may all be on neutral fields
+    if qb_prior is not None and use_qbs:
+        pull[2 * n + 2:2 * n + 2 + nq] = qb_shrinkage * np.array([qb_prior.get(q, 0.0) for q in qbs])
+    if use_new and fixed_inexperience is not None:
+        penalty[-1] = 1e6
+        pull[-1] = 1e6 * fixed_inexperience
+    rhs = rhs + pull
+    beta = np.linalg.solve((xtw @ x).toarray() + np.diag(penalty), rhs)
     offense, defense = beta[:n] - beta[:n].mean(), beta[n:2 * n] - beta[n:2 * n].mean()
     return {"ratings": pd.DataFrame({"offense": offense, "defense": defense}, index=teams),
             "base": beta[2 * n] + beta[:n].mean() - beta[n:2 * n].mean(), "home_adv": beta[2 * n + 1],
@@ -177,13 +200,78 @@ def window(played: pd.DataFrame, cutoff: str, training_years=TRAINING_YEARS) -> 
     return played[(played["date"] >= start) & (played["date"] < cutoff)]
 
 
+def conference_of(games: pd.DataFrame, season: int) -> pd.Series:
+    """Each team's conference in a season (from its schedule, known in advance)."""
+    part = games[games["season"] == season]
+    sides = pd.concat([part[["home", "home_conference"]].set_axis(["team", "conf"], axis=1),
+                       part[["away", "away_conference"]].set_axis(["team", "conf"], axis=1)]).dropna()
+    return sides.drop_duplicates("team", keep="last").set_index("team")["conf"]
+
+
+def season_prior(games: pd.DataFrame, season: int, carry: float, **settings) -> tuple[pd.DataFrame, dict]:
+    """Preseason ratings: the ratings when the season starts (the usual fit on earlier games), each
+    team pulled (1 - carry) of the way toward its conference's average. Returns (prior, that fit)."""
+    played = games[games["status"] == "final"]
+    start = games.loc[games["season"] == season, "date"].min()
+    years = settings.pop("training_years", TRAINING_YEARS)
+    model = fit(window(played, start, years), start, season, **settings)
+    ratings = model["ratings"].copy()
+    conf = ratings.index.map(conference_of(games, season))
+    for col in ("offense", "defense"):
+        mean = ratings[col].groupby(conf).transform("mean")
+        ratings[col] = np.where(pd.isna(conf), ratings[col], carry * ratings[col] + (1 - carry) * mean)
+    return ratings, model
+
+
+def fit_season(games: pd.DataFrame, played: pd.DataFrame, cutoff: str, season: int, priors: dict,
+               carry: float, prior_weight: float, **settings) -> dict:
+    """The preseason version: this season's games only, with team ratings pulled toward the
+    preseason ratings (worth prior_weight games), quarterbacks toward their ratings when the season
+    started, and the new-starter penalty as it was then. priors: a cache, {season: (prior, fit)}."""
+    if season not in priors:
+        priors[season] = season_prior(games, season, carry, **settings)
+    prior, start_fit = priors[season]
+    current = played[(played["season"] == season) & (played["date"] < cutoff)]
+    if current.empty:
+        return {**start_fit, "ratings": prior}
+    settings = {k: v for k, v in settings.items() if k != "training_years"}
+    model = fit(current, cutoff, season, **settings, prior=prior, prior_weight=prior_weight,
+                qb_prior=start_fit["qb_ratings"], fixed_inexperience=start_fit["inexperience"])
+    missing = prior.index.difference(model["ratings"].index)          # teams that haven't played yet
+    model["ratings"] = pd.concat([model["ratings"], prior.loc[missing]])
+    qbs = start_fit["qb_ratings"]
+    model["qb_ratings"] = pd.concat([model["qb_ratings"], qbs[qbs.index.difference(model["qb_ratings"].index)]])
+    return model
+
+
+def early_season(as_of: str, switch: str = PRESEASON["switch"]) -> bool:
+    """Before the switch date (and after the summer): preseason ratings still lead."""
+    return "07-01" <= as_of[5:] < switch
+
+
+def current_fit(games: pd.DataFrame, as_of: str, season: int, priors: dict | None = None) -> dict:
+    """The model as live predictions use it on a date: preseason ratings early in the season, the
+    usual fit after. games: every game (played and scheduled)."""
+    played = games[games["status"] == "final"]
+    if early_season(as_of):
+        return fit_season(games, played, as_of, season, priors if priors is not None else {},
+                          PRESEASON["carry"], PRESEASON["prior_weight"])
+    return fit(window(played, as_of), as_of, season)
+
+
 def backtest(games: pd.DataFrame, start_season: int, end_season: int | None = None, half_life_days=HALF_LIFE_DAYS,
              season_weight=SEASON_WEIGHT, shrinkage=SHRINKAGE, margin_sd=MARGIN_SD,
              training_years=TRAINING_YEARS, qb_shrinkage=QB_SHRINKAGE, starters="expected",
-             inexperience_starts=INEXPERIENCE_STARTS) -> pd.DataFrame:
+             inexperience_starts=INEXPERIENCE_STARTS, carry: float | None = None, prior_weight: float = 0.0,
+             switch: str | None = None) -> pd.DataFrame:
     """Walk-forward: for each week, fit on earlier games only, then predict that week's games
     that involve at least one top-division (FBS) team. starters: 'expected' (each team's previous
-    starter, what a live forecast knows) or 'actual' (who really started: an upper bound)."""
+    starter, what a live forecast knows) or 'actual' (who really started: an upper bound).
+    carry None: the usual fit (the last four seasons by recency); otherwise preseason ratings
+    (season_prior) plus this season's games until `switch` ('MM-DD'), then the usual fit."""
+    priors: dict = {}
+    settings = dict(half_life_days=half_life_days, season_weight=season_weight, shrinkage=shrinkage,
+                    qb_shrinkage=qb_shrinkage, inexperience_starts=inexperience_starts, training_years=training_years)
     played = games[games["status"] == "final"]
     test = played[(played["season"] >= start_season) & ((played["home_division"] == "fbs") | (played["away_division"] == "fbs"))]
     if end_season is not None:
@@ -192,10 +280,13 @@ def backtest(games: pd.DataFrame, start_season: int, end_season: int | None = No
     rows = []
     for (season, _, week), week_games in test.groupby(["season", "season_type", "week"], sort=False):
         cutoff = week_games["date"].min()
-        train = window(played, cutoff, training_years)
-        if train.empty:
-            continue
-        model = fit(train, cutoff, season, half_life_days, season_weight, shrinkage, qb_shrinkage, inexperience_starts)
+        if carry is not None and (switch is None or "07-01" <= cutoff[5:] < switch):
+            model = fit_season(games, played, cutoff, season, priors, carry, prior_weight, **settings)
+        else:
+            train = window(played, cutoff, training_years)
+            if train.empty:
+                continue
+            model = fit(train, cutoff, season, half_life_days, season_weight, shrinkage, qb_shrinkage, inexperience_starts)
         for g in week_games.itertuples():
             starts = "_qb_expected_starts" if starters == "expected" else "_qb_starts"
             p = predict(model, g.home, g.away, bool(g.neutral_site), margin_sd,

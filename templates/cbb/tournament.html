@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}March Madness | College basketball probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>March Madness</h1>
+  <p class="lede">Every team's chance of reaching each round of the NCAA tournament, from the model's ratings and the bracket: each game's chance comes from the two teams who could meet there and how likely each is to get there.</p>
+</div>
+
+{% if odds %}
+<section class="today-section">
+  <h2>{{ season }} tournament</h2>
+  <p class="section-note">Chances of reaching each round. Games already played count as decided; the rest use the model's ratings today, on a neutral court.</p>
+  <div class="table-wrap">
+    <table class="league bets-table tourney-table">
+      <thead><tr><th scope="col">Team</th>{% for r in rounds %}<th scope="col" class="num">{{ r }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for t in odds %}<tr><th scope="row"><a class="team-link" href="{{ t.url }}">{{ t.team }}</a><span class="muted small block">{{ t.seed }} seed, {{ t.region }}{% if t.first_four %}, First Four{% endif %}</span></th>
+        {% for v in t.rounds %}<td class="num{% if loop.last %} strong-cell{% endif %}">{{ v }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% else %}
+<section class="today-section">
+  <h2>The {{ season }} bracket isn't out yet</h2>
+  <p class="section-note">The field is announced on Selection Sunday in mid-March. Once it's saved to <code>{{ bracket_file }}</code> (see the README in that folder), this page shows every team's chances and updates as the games are played. Until then, here's how the same method did on past tournaments.</p>
+</section>
+{% endif %}
+
+{% if backtest %}
+<section class="today-section">
+  <h2>How it did on past tournaments</h2>
+  <p class="section-note">{{ backtest.tournaments }} tournaments since 2010–11, each with the model's ratings from the morning it started and the bracket as it was played. The champion was the model's title favorite {{ backtest.champion_was_favorite }} times and among its top four {{ backtest.champion_top4 }} times; on average it gave the eventual champion {{ "%.0f"|format(backtest.champion_chance * 100) }}% before the first game. That's March: even the best team usually has well under a 1-in-3 chance of winning six games in a row.</p>
+  <div class="calib-wrap">
+    <div class="table-wrap">
+      <table class="league bets-table">
+        <thead><tr><th scope="col">Chance given to reach a round</th><th scope="col" class="num">Chances</th><th scope="col" class="num">Predicted</th><th scope="col" class="num">Happened</th></tr></thead>
+        <tbody>{% for c in backtest.calibration %}<tr><th scope="row">{{ c.range }}</th><td class="num">{{ "{:,}".format(c.n) }}</td><td class="num">{{ "%.0f"|format(c.predicted * 100) }}%</td><td class="num"><strong>{{ "%.0f"|format(c.actual * 100) }}%</strong></td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+  <p class="note">Honest chances: teams given 60–70% to reach a round reached it about that often. Log loss {{ "%.3f"|format(backtest.loss) }} for these chances, against {{ "%.3f"|format(backtest.base_loss) }} knowing only how many teams reach each round.</p>
+  <div class="table-wrap">
+    <table class="league bets-table">
+      <thead><tr><th scope="col">Season</th><th scope="col">Champion</th><th scope="col" class="num">Its chance</th><th scope="col" class="wide-only">Model's favorite</th><th scope="col" class="num wide-only">Chance</th></tr></thead>
+      <tbody>{% for x in backtest.seasons %}<tr><th scope="row">{{ x.label }}</th><td>{{ x.champion or '–' }}</td><td class="num">{% if x.champion_chance is not none %}{{ "%.0f"|format(x.champion_chance * 100) }}%{% endif %}</td><td class="wide-only">{{ x.favorite }}</td><td class="num wide-only">{{ "%.0f"|format(x.favorite_chance * 100) }}%</td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

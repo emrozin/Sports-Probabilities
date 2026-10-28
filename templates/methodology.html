@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}How it works | Sports probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>How it works</h1>
+  <p>Every game on this site gets a chance for each result from a statistical model, shown next to the betting market's. The point is to find out, honestly, how close a model built from free data can get to the market, and whether it ever knows something the market doesn't.</p>
+</div>
+
+<nav class="method-toc" aria-label="On this page">
+  <a href="#models">The models</a> <a href="#testing">How they're tested</a> <a href="#results">Results</a>
+  <a href="#betting">Betting</a> <a href="#data">Data</a> <a href="#limits">What they don't know</a>
+</nav>
+
+<section class="today-section method" id="models">
+  <h2>The models</h2>
+  <p>Every model does the same two things: it rates each team from its past results, and it turns two teams' ratings into a chance for each result. They differ in what goes into a rating.</p>
+  <dl class="method-list">
+    <dt><a href="{{ base }}/premier-league/">Premier League</a></dt>
+    <dd>An <strong>attack and a defense rating</strong> for every team, fitted to three years of results with recent matches counting most. Each side's goals are a Poisson count whose average is its attack against the other's defense (plus home advantage), so every exact score has a chance, and from those every result, total and handicap. It learns from <strong>expected goals (xG)</strong> as well as goals, since xG says more about how good a team really is. It also learns from <strong>Championship</strong> matches (counting a tenth as much), so a newly promoted team is rated from its Championship season. Early in the season, ratings lean on squad values, fading out as results come in.</dd>
+    <dt><a href="{{ base }}/la-liga/">La Liga</a>, <a href="{{ base }}/bundesliga/">Bundesliga</a>, <a href="{{ base }}/serie-a/">Serie A</a>, <a href="{{ base }}/ligue-1/">Ligue 1</a> and the <a href="{{ base }}/champions-league/">Champions League</a>, <a href="{{ base }}/europa-league/">Europa League</a> and <a href="{{ base }}/conference-league/">Conference League</a></dt>
+    <dd>The same kind of goals model for <strong>every club in Europe</strong>, from 19 domestic leagues and the three European cups together. A club's rating is its league's rating plus its own difference from that league: league games pin down how a club compares with its league, and European games, the only ones between leagues, pin down how strong each league is. Each club's Transfermarkt squad value is part of its rating too, which matters most for clubs from leagues that rarely meet. Knockout ties add the other leg, extra time and penalties. One model covers all three cups and the four leagues. For the leagues' own games, the ratings also learn from <strong>expected goals</strong> (Understat), and the chances are 60% an <strong>Elo rating</strong> of every club (which follows form within a season faster) and 40% the goals model: together they beat either one alone on the held-out seasons.</dd>
+    <dt><a href="{{ base }}/nfl/">NFL</a></dt>
+    <dd>An <strong>offense and a defense rating</strong> in points for every team, fitted to four years of games by weighted least squares, plus a rating for <strong>every starting quarterback</strong> (with a penalty for new starters) and a cost for <strong>missing starters</strong> from the injury report. The expected margin becomes a win chance through the usual spread of NFL results around it (about 12 points).</dd>
+    <dt><a href="{{ base }}/nba/">NBA</a></dt>
+    <dd>A rating for <strong>every player</strong>, from how his teams did with him on the court, weighted by the minutes he's expected to play, and <strong>who's available</strong> from the injury report. Plus a team term, home court and a cost for the second night of a back-to-back.</dd>
+    <dt><a href="{{ base }}/cfb/">College football</a> and <a href="{{ base }}/cbb/">college basketball</a></dt>
+    <dd>Offense and defense ratings like the NFL's (football adds quarterbacks), with earlier seasons counting less, since college rosters turn over fast. Early in the season, ratings start from <strong>last season's, pulled toward the conference average</strong>, and this season's games take over as they're played. March Madness odds come from the bracket, worked out exactly.</dd>
+  </dl>
+  <p>Season forecasts (playoff odds, title, top-four and relegation odds, the European cups' knockout chances) play the rest of the season out 10,000 times from the same models.</p>
+</section>
+
+<section class="today-section method" id="testing">
+  <h2>How they're tested</h2>
+  <ol class="method-steps">
+    <li><strong>Walk-forward backtests.</strong> For every past week, the model is fitted only on the games played before it, then predicts that week. Nothing from the future leaks in.</li>
+    <li><strong>Tuning seasons and held-out seasons.</strong> Settings (how fast old games fade, how hard ratings are pulled toward average, ...) are chosen on the earlier seasons only. Then the chosen model is checked <em>once</em> on later seasons it never saw. Only that held-out score is reported as the result. An idea that helps on the tuning seasons but not on the held-out ones is dropped, and the site says so.</li>
+    <li><strong>Log loss.</strong> Each prediction is scored by how much chance it gave what actually happened: the average of −log(that chance). Lower is better; a coin flip scores 0.693 for two outcomes, guessing a third each scores 1.099 for soccer. Pages also show it as a "typical chance for the result", which is easier to read.</li>
+    <li><strong>Calibration.</strong> Of the games given 70%, did about 70% happen? Every track record has a chart of it.</li>
+    <li><strong>A live record nobody can edit.</strong> Predictions are saved before kickoff and committed to the <a href="https://github.com/emrozin/Sports-Probabilities/tree/main/records">public repository</a>, so the Git history shows when each was made. They're never changed after kickoff.</li>
+    <li><strong>The market as the benchmark.</strong> The betting market's closing price (with the bookmaker's margin taken out) is the sharpest forecast there is. Beating a simple rating like Elo is the minimum; getting close to the market is the real test.</li>
+  </ol>
+</section>
+
+<section class="today-section method" id="results">
+  <h2>Results on the held-out seasons</h2>
+  <div class="table-wrap"><table class="league compact method-table">
+    <thead><tr><th scope="col">Sport</th><th scope="col">Seasons</th><th scope="col" class="num">Model</th><th scope="col" class="num">Benchmark</th><th scope="col" class="num">Market</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Premier League</th><td>2021-22 to 2025-26</td><td class="num"><strong>0.975</strong></td><td class="num">0.982 <span class="muted small">goals only</span></td><td class="num">0.959</td></tr>
+      <tr><th scope="row">NFL</th><td>2018 to 2025</td><td class="num"><strong>0.629</strong></td><td class="num">0.638 <span class="muted small">Elo</span></td><td class="num">0.609</td></tr>
+      <tr><th scope="row">NBA</th><td>2014-15 to 2025-26</td><td class="num"><strong>0.612</strong></td><td class="num">0.627 <span class="muted small">Elo</span></td><td class="num">–</td></tr>
+      <tr><th scope="row">College football</th><td>2018 to 2025</td><td class="num"><strong>0.533</strong></td><td class="num">0.554 <span class="muted small">Elo</span></td><td class="num">0.504*</td></tr>
+      <tr><th scope="row">College basketball</th><td>2018-19 to 2025-26</td><td class="num"><strong>0.537</strong></td><td class="num">0.549 <span class="muted small">Elo</span></td><td class="num">–</td></tr>
+      {% for c in cups %}<tr><th scope="row">{{ c.name }}</th><td>{{ c.seasons }}</td><td class="num"><strong>{{ c.model }}</strong></td><td class="num">{{ c.elo }} <span class="muted small">Elo</span></td><td class="num">–</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+  <p class="note">Log loss, lower is better. Soccer has three outcomes, so its numbers aren't comparable with the others'. "–": no free historical odds; the live records compare with the market as the seasons go. *College football's market score is on the games with odds, where the model scores 0.521. Details on each sport's backtest page.</p>
+  <p>In short: every model beats its simple benchmark, and none beats the market. The market knows things the free data doesn't: late injury news, lineups, weather, motivation.</p>
+</section>
+
+<section class="today-section method" id="betting">
+  <h2>Betting</h2>
+  <p>The <a href="{{ base }}/betting/">Betting page</a> turns each model into a rule: bet when the model's chance times the price gives an expected return of at least 3%, and stake a quarter of the Kelly criterion, at most 3% of the bankroll. On the held-out seasons, at the prices of the time, <strong>it lost money in every sport</strong>, and the bigger the model's claimed edge, the worse it did. Changes to the rule (blending with the market, tuning it, betting spreads and totals instead of moneylines) didn't fix that. So the recommended stake is $0, and the page says why. It's a statistics project, not betting advice.</p>
+</section>
+
+<section class="today-section method" id="data">
+  <h2>Where the data comes from</h2>
+  <ul>
+    <li>Premier League: <a href="https://www.football-data.co.uk/">football-data.co.uk</a> (results, stats and odds since 1993), <a href="https://understat.com/">Understat</a> (xG), the Fantasy Premier League API (squad values, team news).</li>
+    <li>Europe's leagues and cups: ESPN's public scoreboard feed (results, fixtures, DraftKings odds); squad values from <a href="https://github.com/dcaribou/transfermarkt-datasets">transfermarkt-datasets</a>; the big leagues' xG from <a href="https://understat.com/">Understat</a>.</li>
+    <li>NFL: <a href="https://github.com/nflverse">nflverse</a> (games, play-by-play, snaps, injuries, lines).</li>
+    <li>NBA and college basketball: ESPN via <a href="https://github.com/sportsdataverse">sportsdataverse</a>, and ESPN's injury report, lines and DraftKings' player props.</li>
+    <li>College football: <a href="https://collegefootballdata.com/">CollegeFootballData</a> via cfbfastR-data, and ESPN's lines.</li>
+  </ul>
+  <p>Everything updates automatically twice a day, plus an evening run for late NBA news. The code, the tests and the full write-up are on <a href="https://github.com/emrozin/Sports-Probabilities">GitHub</a>.</p>
+</section>
+
+<section class="today-section method" id="limits">
+  <h2>What the models don't know</h2>
+  <ul>
+    <li>Lineups and late scratches beyond the injury reports (and in soccer, rotation for a cup game).</li>
+    <li>Transfers and coaching changes, until results show them.</li>
+    <li>Weather, travel, motivation and anything said in a press conference.</li>
+    <li>For the European cups: clubs from leagues not in the data are rated from their European games only.</li>
+  </ul>
+</section>
+{% endblock %}

@@ -6,7 +6,7 @@
   <h1>Team ratings</h1>
   {% if rows %}<p class="lede">Points per game each top-division team scores and stops compared with an average one, as of {{ as_of }}.</p>
   <details class="explain"><summary>How these work</summary>
-    <p>Fitted to the last three seasons of games, with recent ones counting much more and earlier seasons less again, because college rosters turn over quickly. Second-division (FCS) games are included too, so the FCS teams that FBS schools play are rated properly. Quarterback is the latest starter's own rating (with a penalty for new starters), on top of his team's. Overall adds all three: the expected margin against an average FBS team on a neutral field. Home field is worth about {{ home_adv }} points.</p>
+    <p>Fitted to the last four seasons of games, with recent ones counting much more and earlier seasons less again, because college rosters turn over quickly. Until November, ratings start instead from last season's, pulled a fifth of the way toward each team's conference average and counted as three games, and this season's games are added on top: that was more accurate early in the season. Second-division (FCS) games are included too, so the FCS teams that FBS schools play are rated properly. Quarterback is the latest starter's own rating (with a penalty for new starters), on top of his team's. Overall adds all three: the expected margin against an average FBS team on a neutral field. Home field is worth about {{ home_adv }} points.</p>
   </details>{% endif %}
 </div>
 {% if rows %}

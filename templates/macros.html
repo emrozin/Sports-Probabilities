@@ -25,7 +25,7 @@
    current_team: on a team page, that team isn't linked. #}
 {% macro match_card(m, current_team=None) %}
   {% set finished = m.score is defined and m.score %}
-  <li class="match card teamed epl{% if finished %} is-finished{% endif %}" style="{{ epl_colors(m.home, m.away) }}">
+  <li class="match card teamed epl{% if finished %} is-finished{% endif %}" style="{{ epl_colors(m.home, m.away) }}" data-teams="epl:{{ m.home }}|epl:{{ m.away }}">
     <div class="card-top">
       <span class="card-when">
         {% if m.outcome %}{{ outcome_badge(m.outcome) }}{% endif %}

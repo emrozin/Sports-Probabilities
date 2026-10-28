@@ -1,6 +1,6 @@
-# Sports Probabilities: Premier League, NFL, NBA, college football and college basketball
+# Sports Probabilities: Premier League, Europe's big leagues and cups, NFL, NBA, college football and college basketball
 
-Statistical models that estimate win probabilities for English Premier League matches, NFL and NBA games and college football and basketball games, evaluated honestly against the sharpest benchmark available: betting-market odds. Predictions for upcoming games are published to this repository before kickoff, so each model's live track record can be checked by anyone. All five sports share one database, one automated update and one website, with a sport menu.
+Statistical models that estimate win probabilities for English Premier League matches, the Champions League, Europa League and Conference League, NFL and NBA games and college football and basketball games, evaluated honestly against the sharpest benchmark available: betting-market odds. Predictions for upcoming games are published to this repository before kickoff, so each model's live track record can be checked by anyone. Every sport shares one database, one automated update and one website, with a sport menu.
 
 The Premier League model came first and is described in most detail below; the NFL, NBA and college sections follow.
 
@@ -73,7 +73,7 @@ A **season simulator** plays out the rest of the season 10,000 times with the mo
 
 - **The gap to the market is spread evenly.** An error analysis split the backtest by team, stage of the season, favorite strength and outcome. The model is well calibrated overall (slightly too cautious on strong favorites), and no single group accounts for the shortfall. That pattern points to missing information, mainly team news, rather than a flaw in the math.
 - **Squad value helps early in the season, and only then.** See below.
-- **Promoted teams aren't a weak spot.** A dedicated check found the model's error on newly promoted teams' matches only slightly worse than usual, so importing second-division data to rate them wasn't worth the added complexity.
+- **Championship matches help a little with promoted teams.** A first check found the model's error on newly promoted teams' matches only slightly worse than usual. Later the model learned from Championship matches too (`epl/tune_championship.py`): every team keeps one attack and one defense rating whichever division it plays in, Championship games have their own scoring level, and each team is pulled toward its division's level. Counting Championship matches a tenth as much as Premier League ones was best on 2016/17–2020/21 (log loss 0.9516 to 0.9507), and on the held-out 2021/22–2025/26 seasons it improved every match (0.9733 to 0.9723 on the same 1,895 matches) and promoted teams' matches most (0.8982 to 0.8954), while also predicting promoted teams' first matches, which the old model skipped. That closes about 6% of the gap to the market (0.9570).
 - **Home advantage is shrinking.** Home teams won around 45–50% of matches in the 1990s and 2000s, and closer to 41–48% recently.
 - **Crowds matter.** In 2020/21, played without fans, away teams won more often than home teams (40.3% vs 37.9%), the only season where that happened.
 - **Scoring jumped in 2023/24** to 3.28 goals per game, the highest on record, coinciding with a crackdown on time-wasting that added stoppage time. The goals-only model was slow to adapt that season.
@@ -108,8 +108,13 @@ Data: every game since 1999 from [nflverse](https://github.com/nflverse/nfldata)
 | Points model (offense/defense ratings) | 0.6374 | 66% |
 | Points model + usual-starter quarterback flag | 0.6326 | 72% |
 | Points model + individual quarterback ratings | 0.6298 | 75% |
-| **+ starters checked against the box scores** | **0.6295** | **75%** |
+| + starters checked against the box scores | 0.6295 | 75% |
+| **+ missing starters (version 3, the site)** | **0.6289*** | **76%** |
 | Market moneylines | 0.6089 | 100% |
+
+\* Measured with the backtest of the version before it on the same copy of the data (0.6298 to 0.6289); the next update recomputes it.
+
+**Missing starters** (`nfl/starters.py`). Apart from the quarterback, each team's regulars are the players who played at least 60% of its offensive or defensive snaps in its previous game; one is missing when that week's injury report lists him Out or Doubtful, or he's on a reserve list. (Game-day inactives aren't used: they come out after the forecast.) Each full-time starter missing costs about 0.8 points on offense and 0.9 on defense, fitted on 2013-2017 and checked once on 2018-2025, where it improved the log loss by about 0.001: a small, real gain, roughly what the market already prices. The game pages list who's missing.
 
 Offense and defense ratings alone did no better than Elo on the held-out seasons, despite looking better on the tuning seasons. Quarterbacks made the real difference. A simple flag for teams not starting their usual quarterback came first (the model had been overrating those teams by about two points); individual quarterback ratings then replaced it, helping most in the first four weeks of a season, when teams have new starters (held-out log loss 0.6493 to 0.6458 in weeks 1-4).
 
@@ -154,7 +159,9 @@ Every game and every player's box score line since 2002-03 from [sportsdataverse
 
 The model picks the winner 66.0% of the time (Elo 65.2%). Back-to-backs (`nba/rest_test.py`) were tested on the tuning seasons first (0.5950 to 0.5939), then once on the held-out ones (0.6135 to 0.6124, 65.7% to 66.0% picked). Knowing who's available is worth about as much as the player ratings themselves: ignoring it gives back most of the gain over team ratings. Sharing minutes in order of each player's usual minutes beat scaling everyone down evenly. There are no free historical betting lines for the NBA; ESPN's lines are saved from this season on (below), so the track record will compare the model with the market.
 
-**Player props** (`nba/players.py`). Points, rebounds, assists and threes for every player in upcoming games, projected the way the game model builds lineups: his recent rate per minute (pulled toward his position's average when he has few minutes) times his expected minutes, as a share of what the model expects his team to get, so when a teammate sits his share goes up. The chance of reaching each line (15+ points, 10+ rebounds...) comes from a negative binomial spread whose variance grows with the projection, fitted on 2014-15 to 2016-17 (a fixed-width spread made stars' chances too wide). On held-out 2017-18 onward (239,683 player-games), the average miss was smaller than each player's season average by 2.3% for points, 0.7% rebounds, 3.1% assists and 2.4% threes, and the chances are calibrated (props given 40-60% hit 49% of the time, 60-75% 67%, 75-90% 81%). The five likeliest props each day were given 93.7% on average and hit 91.8% of the time. Likely to hit isn't the same as a good bet: these aren't compared with the sportsbook's price.
+**Player props** (`nba/players.py`). Points, rebounds, assists and threes for every player in upcoming games, projected the way the game model builds lineups: his recent rate per minute (pulled toward his position's average when he has few minutes) times his expected minutes, as a share of what the model expects his team to get, so when a teammate sits his share goes up. The chance of reaching each line (15+ points, 10+ rebounds...) comes from a negative binomial spread whose variance grows with the projection, fitted on 2014-15 to 2016-17 (a fixed-width spread made stars' chances too wide). On held-out 2017-18 onward (239,683 player-games), the average miss was smaller than each player's season average by 2.3% for points, 0.7% rebounds, 3.1% assists and 2.4% threes, and the chances are calibrated (props given 40-60% hit 49% of the time, 60-75% 67%, 75-90% 81%). The five likeliest props each day were given 93.7% on average and hit 91.8% of the time. Likely to hit isn't the same as a good bet, so the props are now also tested against the sportsbook's prices (below).
+
+**Props against the sportsbook** (`nba/prop_lines.py`). ESPN's feed shows DraftKings' player props: an over/under line (22.5 points, say) and both prices, for points, rebounds, assists and threes. There's no free history of them, so the test runs forward: every update saves each upcoming game's latest lines until tip-off (the last one saved is the closing line) to `records/nba_prop_lines.csv`, and once the game is played each line is scored two ways: the log loss of the over, the model's chance against the price's (with DraftKings' margin taken out), and the betting rule (bet the over or the under when the expected return is at least 3%). A player who doesn't play voids the line. The props page shows the running result; it will take a few weeks of games before it means much.
 
 **Playoff odds** (`nba/season.py`). The rest of the season is played out 10,000 times with the players-and-availability model, leaving injured players out until ESPN's expected return date, with a random strength shift for each team in each simulated season (3 points per game; chosen on 2020-21 and 2021-22). Standings use head-to-head and conference record for ties, then the play-in (7th v 8th, the loser v the winner of 9th v 10th) and four best-of-seven rounds with home court. On the held-out 2022-23 to 2025-26 seasons (odds made on 1 December, 15 January and 1 March): making the playoffs scored a log loss of 0.318 (0.343 without the shift; 0.691 for a flat league-wide rate), and teams given 10-30% made it 18% of the time, 30-50% 38%, 70-90% 76%.
 
@@ -166,15 +173,18 @@ Games involving a top-division (FBS) school since 2001 from [cfbfastR-data](http
 
 **Quarterbacks.** Each team's starter is found from the play-by-play (the quarterback with the most dropbacks, from 2014; `import_cfb.py`). The model rates quarterbacks the way the NFL model does, plus a penalty for a new starter that fades over his first 12 starts. Predictions use the expected starter (each team's previous starter), since that's all a forecast made before kickoff knows. The gain is small (held-out log loss 0.4887 to 0.4877, better in 6 of 8 seasons): college teams change quarterbacks less often mid-season than NFL teams, and a starter's quality is mostly already in his team's rating.
 
+**Preseason ratings** (version 3, `cfb/preseason_test.py`). The multi-season fit rated a team in September much as it finished last year, although rosters turn over. Now, until 1 November, last season's ratings pulled a fifth of the way toward each team's conference average count as three games (quarterbacks start from their ratings at the end of last season, the new-starter penalty is held at its preseason value), and the season's own games are added on top; after that the usual fit takes over. The settings were tuned on 2010-2017 (early-season log loss 0.4165 to 0.4139) and checked once on the held-out seasons: games in August and September 0.3957 to 0.3940, the whole season 0.4877 to 0.4861, better in 5 of 8 seasons.
+
 **Results** on held-out seasons (2018-2025), log loss (ties left out):
 
-| | Games with an Elo rating (5,849) | Games with odds (5,430) |
+| | Games with an Elo rating (5,849) | Games with odds (5,429) |
 |---|---|---|
-| This model | **0.5340** | 0.5227 |
+| This model (version 3, preseason ratings) | **0.5326** | 0.5212 |
+| Version 2 | 0.5340 | 0.5229 |
 | CollegeFootballData's Elo | 0.5538 | |
 | Betting market (closing consensus) | | **0.5043** |
 
-The model beats CollegeFootballData's Elo but not the market, which knows about injuries, transfers and suspensions the free data doesn't capture; the gap (0.018) is about the same as the NFL model's. The free lines don't cover the current season yet, so upcoming games are compared with Elo instead.
+The model beats CollegeFootballData's Elo but not the market, which knows about injuries, transfers and suspensions the free data doesn't capture; the gap (0.017) is about the same as the NFL model's. The free lines don't cover the current season yet, so upcoming games are compared with Elo instead.
 
 **Conference title odds** (`cfb/conference.py`). The rest of the season is played out 10,000 times with the model, like the NFL playoff odds: each game gets a random result, and each team a random "how good are they really" shift for the whole simulated season (8 points, chosen on 2022-2023; ratings from a dozen games across 130+ teams are much less certain than NFL ones). The top two teams in conference play meet in the title game (the Sun Belt's division winners), with ties settled by head-to-head record, then overall record, then rating. Tested on 2024-2025, from before week 1, 5, 9 and 12 (72 conference races): the eventual champion got about a 13% chance on average, against 7% picking a team at random (log loss 2.01 vs 2.66; 2.22 without the rating shift), and the chances are calibrated (teams given 15-30% won 20% of the time, 30-50% 34%). The site also shows standings for every season, filtered by conference.
 
@@ -182,16 +192,59 @@ The model beats CollegeFootballData's Elo but not the market, which knows about 
 
 Men's Division I games since 2002-03 from [sportsdataverse-data](https://github.com/sportsdataverse/sportsdataverse-data), which republishes ESPN's schedules, scores and conferences (and team colors). Games against schools outside Division I are kept, with those schools sharing one rating, since they only play a game or two a year. Seasons are named by their starting year (2025 is 2025-26).
 
-**Model** (`cbb/model.py`). The same points model as college football, without quarterbacks: offense and defense ratings for every team and home court (about 3 points), fitted on three seasons with a 120-day half-life, refitted every week. Tuned on 2010-11 to 2017-18 (`cbb/tune_model.py`). There are no free historical betting lines for college basketball, so the benchmark is a simple margin-aware Elo rating.
+**Model** (`cbb/model.py`). The same points model as college football, without quarterbacks: offense and defense ratings for every team and home court (about 3 points), fitted on three seasons with a 120-day half-life, refitted every week. Tuned on 2010-11 to 2017-18 (`cbb/tune_model.py`). **Preseason ratings** (version 3, `cbb/preseason_test.py`): college rosters turn over a lot, but the original model rated a team in November almost exactly as it finished in March. Now, until 15 December, last season's ratings pulled 35% of the way toward each team's conference average count as 8 games, and the season's own games are added to them. Tuned on 2010-11 to 2017-18, then checked once on the held-out seasons: early-season log loss 0.4901 to 0.4858, whole season 0.5382 to 0.5371. Scaling the pull by how many of last season's minutes return (from ESPN's player box scores) didn't help. There are no free historical betting lines for college basketball, so the benchmark is a simple margin-aware Elo rating.
 
 **Results** on held-out seasons (2018-19 to 2025-26, 43,330 games):
 
 | | Log loss | Typical probability | Picks the winner |
 |---|---|---|---|
-| This model | **0.5382** | 58.4% | 72.0% |
+| This model (version 3, preseason ratings) | **0.5371** | | |
+| Version 2 | 0.5382 | 58.4% | 72.0% |
 | Simple Elo | 0.5491 | 57.7% | 71.2% |
 
 The model is better than Elo in all eight seasons. Tuning helped (0.5426 with first guesses), mostly through weaker shrinkage, as in football.
+
+**March Madness** (`cbb/tournament.py`, `/cbb/tournament/`). Each team's chance of reaching each round, worked out exactly from the bracket: every game's chance sums over the opponents who could be there, weighted by how likely each is to get there. For past tournaments the bracket is rebuilt from the games; this season's comes from `cbb/brackets/bracket_<season>.csv`, saved on Selection Sunday. On the 14 tournaments since 2010-11 (with ratings from the morning each started) the chances are well calibrated (teams given 60-70% to reach a round reached it 61% of the time, 70-90% 80%), the champion was the model's favorite 3 times and in its top four 8 times, and it gave the eventual champion 11% on average before the first game.
+
+## Europe: the big leagues and the European cups
+
+**Data** (`ucl/import_espn.py`). ESPN's public scoreboard feed, which uses one id per club in every competition: the three European cups since 2013-14 and 19 domestic leagues (England, Spain, Germany, Italy, France, Portugal, the Netherlands, Belgium, Turkey, Scotland, Greece, Austria, Switzerland, Denmark, Norway, Sweden, Israel, Romania, Russia), about 80,000 games, plus DraftKings' three-way odds for upcoming games in the cups and the big leagues. The feed answers one day at a time; each league's season comes with its calendar of game days (with a fallback to every day when a season comes back short), and finished seasons are saved to `data/raw/espn_soccer/` and never asked for again.
+
+**Model** (`ucl/model.py`). In the cups most clubs meet once, from a dozen countries, so European games alone can't rate them. Each club gets an attack and a defense rating made of its league's rating plus its own difference from it: league games pin down how a club compares with its league, and European games, the only ones between leagues, pin down how strong each league is. Goals are Poisson, with separate home advantages for league and European games, recent games weighted most, clubs shrunk toward their league and leagues (gently) toward Europe's average, fitted by maximum likelihood with L-BFGS. Clubs from leagues not in the feed (Croatia, Serbia, Ukraine, Czechia and others) share one "other" league rated from European games only. Two-legged ties add extra time (a third of a game's goals) and penalties at even odds.
+
+Tuned on the Champions League's 2016-17 to 2020-21 seasons (`ucl/tune_model.py`, one setting at a time): log loss 0.9217 with first guesses to 0.9186, mostly from a longer memory (a 730-day half-life over four years).
+
+**Squad values** (version 2, `ucl/squad_values.py`, `ucl/improve_test.py`). Results alone miss what a squad is worth on paper, which the market knows. Transfermarkt's player values (the same CC0 dataset as the Premier League's) give every club's monthly squad value (its 18 most valuable players), linked to ESPN's clubs by matching games; each club's log squad value now adds to its attack and defense with fitted weights, and its own results-based difference is pulled harder toward what its squad predicts. On the tuning seasons (Champions and Europa League, 2016-17 to 2020-21) that was the only change that clearly helped: 0.9624 to 0.9598. Weighting earlier seasons less, shrinking defense ratings more, the Dixon-Coles low-score adjustment and other weights all stayed within 0.0004 of the current model. Transfermarkt's dataset paused in July 2026, so this season's transfers aren't in the values yet.
+
+**Held-out results** (2021-22 to 2025-26, walk-forward before every match day, `ucl/run_backtest.py`), log loss after 90 minutes (games that went to extra time count as draws):
+
+| | Games | Version 1 (results) | **Version 2 (+ squad values)** | Elo (every club, every game) | Base rates |
+|---|---|---|---|---|---|
+| Champions League | 753 | 0.907 | 0.910 | 0.933 | 1.043 |
+| Europa League | 799 | 0.974 | 0.976 | 1.031 | 1.057 |
+| Conference League | 729 | 0.993 | **0.978** | 1.000 | 1.062 |
+| All three | 2,281 | 0.958 | **0.955** | | |
+
+A mixed result: squad values cost a little in the Champions and Europa Leagues, where results already rate the clubs well, and helped a lot in the Conference League, whose clubs often come from leagues the feed doesn't cover, where squad values are the only link between countries. Overall better, so version 2 is the site's model. There are no free historical odds for the cups, so the market comparison is live only (DraftKings via ESPN), and the betting rule's suggestions for the cups are untested.
+
+**Season odds** (`ucl/season.py`). The rest of each cup's season is played out 10,000 times: the league phase (with UEFA's first tie-breakers), the knockout play-offs and bracket following the seeding rules (real pairings once drawn), two-legged ties and a neutral final. Are those chances too confident? `ucl/season_test.py` replayed the past knockout stages (Champions and Europa League 2016-17 to 2020-21 for tuning; all three cups 2021-22 to 2025-26) and the 2024-25 and 2025-26 league phases, with and without a random season-long shift in every club's ratings (what the NFL and college simulations use): small shifts made almost no difference and big ones hurt, so the chances are about as confident as the past says they should be, and no shift is used. (A first, smaller version of the test, Champions League only, had pointed both ways.)
+
+**The big leagues** (La Liga, Bundesliga, Serie A and Ligue 1). They were already in the model as the data that rates the cup clubs; now they have their own pages too, from the same model with the domestic home advantage. Their seasons are simulated 10,000 times for each club's chances of the title, the top four and the bottom three (ties on points split by goal difference, then goals scored). Here a small season-long shift in every club's ratings does help, since a league club has 20 to 30 games left, not a handful, for a rating error to add up over: replaying 2016-17 to 2020-21 from a quarter of the way and from halfway through each season, a shift of 0.10 was best (log loss 0.1417 against 0.1430 with none), and on held-out 2021-22 to 2025-26 it beat no shift too (0.1665 against 0.1690), so the league simulations use it.
+
+How good are the league predictions? The goals model is built for the cups, rating every club in Europe at once, and in the leagues' own games it did only about as well as a plain Elo rating of every club. The two make different mistakes (Elo follows a club's form within a season faster), so a league game's chances are a blend, 60% Elo and 40% the goals model (`ucl/elo.py`; 0.6 was best on the 2016-17 to 2020-21 games, and best on the held-out ones too). Held out, 2021-22 to 2025-26, log loss:
+
+| | Games | Goals model | Elo | Blend | **Blend, with xG (the site)** | Base rates |
+|---|---|---|---|---|---|---|
+| La Liga | 1,895 | 0.986 | 0.984 | 0.982 | **0.980** | 1.067 |
+| Bundesliga | 1,530 | 0.992 | 0.988 | 0.987 | **0.985** | 1.071 |
+| Serie A | 1,901 | 0.991 | 0.990 | 0.988 | **0.988** | 1.089 |
+| Ligue 1 | 1,677 | 0.998 | 1.000 | 0.996 | **0.995** | 1.072 |
+
+For comparison, the Premier League's own model scores 0.975 and the betting market 0.959 there, so these leagues' predictions are a step behind the Premier League's.
+
+**Expected goals** (`ucl/import_understat.py`, `ucl/tune_xg.py`). Understat has xG for every game in the big five leagues since 2014-15, about 22,000 games, linked to ESPN's games by matching each Understat club to ESPN's through games on the same day with the same score. The leagues' model now learns 75% from xG and 25% from goals: a small gain on the tuning seasons (0.9734 to 0.9725 on every third match day of 2017-18 to 2020-21) and the same on the held-out ones (0.9910 to 0.9903). The cups' model keeps learning from goals only, because xG made its Champions League predictions slightly worse both times (0.8904 to 0.8935 held out), perhaps because xG only covers five leagues. So the site fits two versions of the same model each day, one for the cups and one for the leagues. The gain is much smaller than xG's in the Premier League's own model, probably because the leagues' chances are already 60% Elo. The season simulations and the scoreline chances use the goals model alone, since Elo has no goals.
+
+On 26 October 2026 the market (DraftKings' odds to win the Champions League) had Barcelona 22%, PSG 20%, Arsenal 16%, Bayern 14%; the model had Arsenal 30%, PSG 17%, Bayern 10% and Barcelona 6%. The biggest gap is Barcelona: their results give them the weakest defense of the top clubs in the model, and the market evidently rates them much higher than that.
 
 ## Betting: does following the model make money?
 
@@ -218,26 +271,56 @@ The model is better than Elo in all eight seasons. Tuning helped (0.5426 with fi
 
 Shopping for the best price is the only change kept: about 6 points per bet, the range now includes zero, and the closing-line value turns slightly positive. Blending backfired: with the chances pulled toward the market, the only edges left were long shots, where the bookmaker's margin is biggest. The tuned rules are textbook overfitting. And the blend predicts the held-out games no better than the market alone (log loss 0.9611 vs 0.9599 for the Premier League, 0.6104 vs 0.6089 for the NFL), so the models don't know anything the prices don't already include: better bets need better information, not a cleverer rule. This matches the backtests: every model here is less accurate than the betting market, so the games where they disagree most are mostly games where the market is right.
 
+**Spreads and totals** (`betting_lines.py`, results in `records/spreads_totals.csv` and on the Betting page). The models predict each side's points (or goals), so they give a chance for every point spread and over/under too. The same rule was tried on those markets on the held-out seasons: NFL and college football with a normal error around the expected margin and total (its size measured on the tuning seasons; whole-number lines can push), the Premier League from the full scoreline grid (over/under 2.5 at the best price, Asian handicaps at Pinnacle's, quarter lines split):
+
+| Market (held-out seasons) | Bets | Return per bet | 95% range | Log loss: model vs market |
+|---|---|---|---|---|
+| NFL point spread | 1,546 | -4.6% | -9.5% to +0.1% | 0.707 vs 0.693 |
+| NFL over/under | 1,533 | -4.5% | -9.3% to +0.3% | 0.710 vs 0.693 |
+| College football point spread | 4,529 | -5.1% | -7.7% to -2.3% | 0.718 vs 0.693 |
+| College football over/under | 4,771 | -6.7% | -9.5% to -4.0% | 0.725 vs 0.693 |
+| Premier League Asian handicap | 1,180 | +1.3% | -3.5% to +6.4% | 0.697 vs 0.691 |
+| Premier League over/under 2.5 | 1,180 | -0.2% | -6.1% to +5.9% | 0.676 vs 0.672 |
+
+In every market the model's chances were less accurate than the market's; against the NFL and college spreads, worse than a coin flip, while the "expected" return was 13-17% a bet. The markets' lines already contain what the models know, and the models' confidence about the margin is the part that's wrong. (football-data.co.uk's best Asian handicap price can belong to a different handicap from the listed one, which made 2025/26 look like +50% a bet; Pinnacle's price always matches its own line, so it's used.) So the rule stays on moneylines.
+
 So the site's **Betting** page leads with that verdict and recommends a stake of $0 for every sport whose past-season test lost (and for the NBA and college basketball, which have no past prices) while showing what the rule would stake for any bankroll and Kelly fraction, so the sizing logic is visible. Every suggested bet is logged the first time it's suggested, at that moment's price, and settled after the game (`records/bets.csv`); the live record, including closing-line value from ESPN's closing lines, shows whether anything changes. This is a statistics project, not betting advice.
 
 ## Website
 
-A FastAPI app with Jinja templates, currently run locally. Tabs in the header switch between the sports. Every game is a card in the two teams' own colors (`colors.py`; when two teams' colors are too alike, the away team wears its second one), with big win chances, the model's bar next to the betting market's, and a tag where the model and the market disagree by 5 points or more. Team pages chart the model's win chance for each game (and, for NFL teams, the model's rating week by week, refitted as it stood at the time). The site follows the device's light or dark mode, works on phones, and keeps longer explanations behind "How to read this". Premier League pages:
+A FastAPI app with Jinja templates, currently run locally. Tabs in the header switch between the sports. Every game is a card in the two teams' own colors (`colors.py`; when two teams' colors are too alike, the away team wears its second one), with big win chances, the model's bar next to the betting market's, and a tag where the model and the market disagree by 5 points or more. Team pages chart the model's win chance for each game (and, for NFL teams, the model's rating week by week, refitted as it stood at the time). The site follows the device's light or dark mode, works on phones, and keeps longer explanations behind "How to read this". Premier League pages (with the same menu and layout as the other soccer competitions: Upcoming, Results, Table and odds, Club ratings, Track record):
 
 - **Upcoming:** next fixtures with model probabilities next to the bookmakers' odds
 - **Match pages:** exact-score grid, over/under (with the market's view), both teams to score
-- **Results** by week and **league tables** for every season since 1993/94, with team pages
-- **Forecast:** season simulation with title, top-four and relegation chances
-- **Track record:** live predictions only, scored against results and the closing market
-- **Backtest** and **Ratings:** held-out performance and current team ratings
+- **Results** a season at a time with a season picker, and **Table and odds**: the table with this season's title, top-four and relegation chances (and every season's table since 1993/94), with team pages
+- **Season forecast** (`/forecast/`, linked from the table): every club's chance of every position
+- **Track record:** live predictions only, scored against results and the closing market, with the **backtest** (`/backtest/`) linked from it
+- **Club ratings:** current attack and defense ratings
 
-NBA pages (under `/nba/`): upcoming games with the market's line and who's out, game pages with each team's expected lineup and player projections, the day's likeliest player props, results, standings by conference or division, playoff odds, team and player ratings, team pages with the roster, track record and backtest.
+NBA pages (under `/nba/`): upcoming games with the market's line and who's out, game pages with each team's expected lineup and player projections (after the game, each projection next to what happened), each team's last 10 games and rest going in, every earlier meeting, the day's likeliest player props, results, standings by conference or division, playoff odds, team and player ratings, team pages with the roster, track record and backtest.
 
 **Why the model picks a team** (NBA and NFL game pages): the expected margin split into its parts as a bar chart, toward one team or the other: for the NBA, the available players, the team beyond its players, home court and back-to-backs, with what each notable absence costs; for the NFL, offense, defense, quarterbacks and home field. When the model and the market are 10 points or more apart, the page says that usually means the model is missing something.
 
+**College game pages** (`/cfb/game/...`, `/cbb/game/...`, `college.py`): the same as the NBA's, with "why the model picks" (offense, defense, home edge and, for football, quarterbacks), line movement, form and every earlier meeting.
+
+**Are the chances honest?** Every sport's track record page has a calibration chart: games grouped by the chance the model gave its favorite (for the Premier League, every result's chance), against how often it happened, for the live predictions and the held-out backtest.
+
+**Team news** (Premier League match pages, `epl/team_news.py`): who's injured, suspended or doubtful from the latest Fantasy Premier League snapshot, regulars first. Not in the model yet: there's no history of pre-match team news to test it on, so the snapshots are being collected first.
+
 **How the line moved** (NBA, NFL and Premier League game pages): every update saves the market's chance (margin removed) and the model's for each game still to play, when either moved, plus ESPN's opening line (`line_history` table, `records/line_history.csv`). The chart shows whether the market moved toward the model before the game, the same idea as closing-line value.
 
-**Today** (`/today/`): every game today in every sport, with the model's pick and chance next to the market's, the biggest disagreements, the bets the rule would make, and the day's likeliest player props. **Betting** (`/betting/`): above, with a "How to read this page" guide. Every page shows when the data was last updated.
+**Today** (the home page, `/`; `/today/` still works): every game today in every sport, with the model's pick and chance next to the market's, the biggest disagreements, the bets the rule would make, and the day's likeliest player props. **Betting** (`/betting/`): above, with a "How to read this page" guide. Every page shows when the data was last updated.
+
+**Soccer** (one tab for every soccer competition, with a switcher at the top of each page between the Premier League, La Liga, the Bundesliga, Serie A, Ligue 1 and the three European cups; switching keeps the kind of page you're on). The Premier League's pages are described above. La Liga (`/la-liga/`), the Bundesliga (`/bundesliga/`), Serie A (`/serie-a/`) and Ligue 1 (`/ligue-1/`) have upcoming games with the model's chances next to DraftKings', match pages, results, the table with every club's chances of the title, the top four and the bottom three (10,000 simulations of the rest of the season), team pages, the club ratings and the track record. The European cups (`/champions-league/`, `/europa-league/`, `/conference-league/`) have upcoming games with the model's chances next to DraftKings' (and each side's chance of going through in knockout ties), match pages with every scoreline and each club's form in every competition, results, the league-phase table with every club's chances of the top 8, each knockout round and the trophy, team pages, Europe's top 60 clubs and the leagues rated, and the track record with the backtest.
+
+**How it works** (`/methodology/`): every model in plain English, how they're tested (walk-forward backtests, tuning and held-out seasons, log loss, calibration, the public live record), the held-out results next to their benchmarks and the market, the betting verdict, the data sources and what the models don't know. Linked from every page's footer.
+
+**Finding your way around:**
+- **Search** (`/search/`, the magnifying glass in the header): any team in any sport, and NBA and NFL players from the last two seasons. Accents and capitals don't matter ("jokic" finds Jokić).
+- **Favorite teams:** a Follow button on every team page. Followed teams are kept in the browser (nothing is sent anywhere), and the Today and upcoming pages get an "Only my teams" switch (`static/site.js`).
+- **Player pages** (`/nba/player/...`, `/nfl/player/...`): the model's projection for the next game, season averages and recent games. Player names on game pages and props link to them.
+- **On phones** the sport tabs are one scrolling row and each sport's pages are a dropdown menu; long tables scroll inside their box instead of widening the page.
+- **Speed:** slow results (the NBA model fit, the betting history) are kept in `data/cache/` and refreshed by the update's last step (`warm_cache.py`), so pages after an update load from those files.
 
 Every sport's **track record** page charts the live record week by week: the typical probability the model gave the actual result so far, next to its benchmark (the betting market, or Elo for college games).
 
@@ -253,8 +336,8 @@ College football (`/cfb/`) and college basketball (`/cbb/`) pages: upcoming game
 
 - **One command updates everything:** `update.py` runs the results, xG, backtest, fixtures, prediction and availability steps in order, stopping at the first failure.
 - **Automatic updates on the Mac:** `scheduled/install.sh` sets up a macOS launchd job that runs `update.py --record` every day at 10:07 and 17:37, and a quick late-news run (`update.py --record --late`: the NBA injury report, predictions, ESPN's lines and the bet log) at 18:37, before most tip-offs, since lines are slow to catch up with late scratches (each runs once on waking if the Mac was asleep), logging to `logs/update.log`; `scheduled/status.sh` shows how the last runs went. The update now takes too long for GitHub's free runners with the NBA backtest, so the scheduled GitHub run is switched off (its manual button still works) and the records are committed from the Mac.
-- **GitHub Actions** runs the test suite on every push, and used to run the update twice a week (Tuesdays and Fridays) runs the update for every sport and commits new predictions to `records/` before kickoff. If one sport's data source fails, the others still update.
-- **248 pytest tests** cover the importers (including format quirks and source changes), the model (valid probabilities, recovering known team strengths from simulated leagues, no look-ahead in the backtest), the prediction record (nothing changes after kickoff), the simulator, the NFL importers, models and player projections (including that nothing uses the game being predicted), the college and NBA importers, models, player lineups and props, ESPN's feeds (read from saved samples), playoff and conference title simulations (including tiebreakers), the betting rule (stakes, settling, the bankroll simulation, the live log and line movement), back-to-backs and the "why" breakdowns, and every sport's website. Tests use simulated leagues and temporary databases, never real data or the network.
+- **GitHub Actions** runs the test suite on every push, and used to run the update for every sport and commit new predictions to `records/` before kickoff. If one sport's data source fails, the others still update.
+- **291 pytest tests** cover the importers (including format quirks and source changes), the model (valid probabilities, recovering known team strengths from simulated leagues, no look-ahead in the backtest), the prediction record (nothing changes after kickoff), the simulator, the NFL importers, models and player projections (including that nothing uses the game being predicted), the college and NBA importers, models, player lineups and props, ESPN's feeds (read from saved samples), playoff and conference title simulations (including tiebreakers), the betting rule (stakes, settling, the bankroll simulation, the live log and line movement), back-to-backs and the "why" breakdowns, search, the page cache, preseason ratings, spreads and totals, the European cups and leagues (ESPN's feed, the Europe-wide ratings, two-legged ties and the season simulations), the sportsbook prop lines, and every sport's website. Tests use simulated leagues and temporary databases, never real data or the network.
 
 ## Project structure
 
@@ -268,7 +351,10 @@ blend.py                Blending a model with the betting market (weighted on th
 espn.py                 Betting lines from ESPN for NBA and college games, saved as the season goes
 betting.py              The betting rule: edges, Kelly stakes, past-season test, the live bet log and line movement
 betting_experiments.py  What was tried to improve the rule, tested on held-out seasons
-overview.py             The Today and Betting pages
+overview.py             The Today (home), Betting, Search and How it works pages
+betting_lines.py        Spreads and totals: the betting rule tried on point spreads and over/unders
+warm_cache.py           The update's last step: precomputes slow page data into data/cache/
+college.py              Shared parts of the college game pages (form, head to head, why this pick)
 scheduled/              The automatic update on the Mac (install, uninstall, status, and the run script)
 templates/, static/     Page templates and styles; build_site.py renders the site as static HTML
 records/                Official live predictions, saved before kickoff
@@ -286,6 +372,7 @@ epl/                    Premier League
   fetch_availability.py   Daily snapshots of player injuries and availability
   error_analysis.py       Where the model loses ground to the market
   promoted_teams.py       How the model handles newly promoted teams
+  tune_championship.py    Does learning from Championship matches help? (yes, a little: they count a tenth)
   import_fpl_values.py, import_transfermarkt.py, tune_squad_value.py, tune_value_fade.py
                           Squad-value data and experiments
   blend.py                The model-market blend test (python -m epl.blend; result in epl/blend.json)
@@ -300,6 +387,7 @@ nfl/                    NFL
   experiments.py          Tests of rest, travel, domes, weather, EPA and other ideas (none helped)
   import_nfl_stats.py     Weekly team and player stats with EPA, injury reports and snap counts from nflverse-data
   quarterbacks.py         Who actually starts: nflverse's listed starters checked against box scores and injury reports
+  starters.py             Missing starters: regulars ruled out this week, and the test of their effect
   qb_overrides.csv        Starting quarterbacks named by hand (e.g. a benching the data can't see)
   players.py              Player projections, how results spread around them (ranges.json, for the chances on game pages), and their test against benchmarks
   player_experiments.py   Tests of injury reports, snap counts, air yards and defense by position
@@ -320,6 +408,8 @@ nba/                    NBA
   run_backtest.py         Saves walk-forward backtest predictions (only new seasons, unless --full)
   predict_upcoming.py     Predicts the next 8 days' games and records them before tip-off
   players.py              Player projections and props (points, rebounds, assists, threes) and their test
+  prop_lines_check.py     A one-off check of whether ESPN's feed has sportsbook prices for player props
+  prop_lines.py           DraftKings' player prop lines, saved before tip-off and scored against the model's props
   predict_players.py      Projects players for upcoming games and records them before tip-off
   season.py               Playoff odds: the rest of the season with the play-in and playoffs, tested on past seasons
   records.py              The official NBA prediction record in records/
@@ -327,7 +417,8 @@ nba/                    NBA
 
 cfb/                    College football
   import_cfb.py           Games, scores, conferences, Elo and consensus betting lines from cfbfastR-data
-  model.py, tune_model.py Points model (offense and defense ratings) and its tuning
+  model.py, tune_model.py Points model (offense and defense ratings, preseason ratings) and its tuning
+  preseason_test.py       Preseason ratings for the first weeks: tuning, then the held-out check
   run_backtest.py         Saves walk-forward backtest predictions
   predict_upcoming.py     Predicts the next 8 days' games and records them before kickoff
   records.py              The official college football prediction record in records/
@@ -335,9 +426,29 @@ cfb/                    College football
   site.py                 The college football web pages
   checks.sql              SQL data checks and exploration queries
 
+ucl/                    Europe: the European cups and La Liga, the Bundesliga, Serie A and Ligue 1
+  import_espn.py          ESPN's feed: the three cups and 19 domestic leagues, one id per club
+  cups.py                 The cups and leagues shown: ESPN's names for them, the site's addresses, the Soccer switcher
+  model.py                Every club in Europe rated from league and European games; ties, extra time, penalties
+  elo.py                  An Elo rating of every club, blended into the league games' chances
+  tune_model.py           Tuning on 2016-17 to 2020-21, with Elo and base-rate benchmarks
+  squad_values.py         Monthly Transfermarkt squad values for every club, linked to ESPN's clubs
+  import_understat.py     Understat xG for the big five leagues, linked to ESPN's games
+  tune_xg.py              Should the ratings learn from xG as well as goals?
+  improve_test.py         What was tried to make the model more accurate (squad values were kept)
+  run_backtest.py         Walk-forward backtest predictions for the cups and leagues, and their summary
+  predict_upcoming.py     Predicts upcoming cup and league games and records them before kickoff
+  season.py               Season simulations: the cups (league phase, knockout bracket, the trophy) and the leagues
+  season_test.py          The rating-uncertainty test on past knockout stages
+  site.py                 The pages for the cups and the leagues
+  records.py              The official prediction record in records/
+
 cbb/                    Men's college basketball
   import_cbb.py           Games, scores, conferences and team colors from sportsdataverse-data (ESPN)
   model.py, tune_model.py Points model (offense and defense ratings), a simple Elo benchmark, and the tuning
+  preseason_test.py       Preseason ratings for the first weeks: tuning, then the held-out check
+  tournament.py           March Madness: exact chances of reaching each round from the bracket, and the backtest
+  brackets/               This season's NCAA bracket, saved on Selection Sunday (see its README)
   run_backtest.py         Saves walk-forward backtest predictions
   predict_upcoming.py     Predicts the next 8 days' games and records them before tip-off
   records.py              The official basketball prediction record in records/
@@ -362,7 +473,6 @@ pytest                        # run the tests
 
 ## Roadmap
 
-- Betting lines for player stats going forward, to compare player projections with the market
 - Compare the NBA and college models with the market as ESPN's lines build up this season
 - Conference tournament and NCAA tournament odds for college basketball
 - Betting lines for the current college football season, to compare upcoming games with the market

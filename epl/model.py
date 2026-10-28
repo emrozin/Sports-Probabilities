@@ -26,6 +26,15 @@ SHRINKAGE = 0.5        # pull toward average ratings (L2 regularization)
 XG_WEIGHT = 0.5        # learn from 50% actual goals, 50% xG
 RHO = 0.0              # Dixon-Coles low-score correction (tested; didn't help)
 TRAINING_YEARS = 3     # how far back the backtest trains
+CHAMP_WEIGHT = 0.1     # Championship matches count a tenth as much (epl/tune_championship.py); 0 = Premier League only
+
+
+def load_with_championship(conn) -> pd.DataFrame:
+    """Premier League and Championship matches together, with a division column ('EPL' or 'CHAMP').
+    Both come from football-data.co.uk, which uses the same team names in both divisions."""
+    epl = load_games(conn).assign(division="EPL")
+    champ = load_games(conn, "CHAMP").assign(division="CHAMP")
+    return pd.concat([epl, champ], ignore_index=True).sort_values(["date", "id"]).reset_index(drop=True)
 
 
 def load_games(conn, league="EPL"):
@@ -132,12 +141,20 @@ def faded_settings(value_weight, shrinkage, rounds_played, fade_rounds):
 
 
 def fit_poisson(train, as_of, half_life_days=HALF_LIFE_DAYS, shrinkage=SHRINKAGE, xg_weight=XG_WEIGHT,
-                squad_values=None, value_weight=0.0):
+                squad_values=None, value_weight=0.0, champ_weight=CHAMP_WEIGHT):
     """Fit attack/defense ratings, base rate and home advantage by weighted maximum likelihood.
 
     Shrinkage pulls ratings toward average or, with squad_values and a value_weight above 0,
     toward what each team's squad value suggests (see squad_value_prior).
+
+    If train has a division column, Championship matches count with champ_weight (0 leaves them
+    out): see fit_with_championship.
     """
+    if "division" in train:
+        champ = train["division"] == "CHAMP"
+        if champ_weight and champ.any():
+            return fit_with_championship(train, as_of, half_life_days, shrinkage, xg_weight, champ_weight)
+        train = train[~champ]
     teams = sorted(set(train["home"]) | set(train["away"]))
     index = {team: i for i, team in enumerate(teams)}
     n = len(teams)
@@ -195,6 +212,73 @@ def fit_poisson(train, as_of, half_life_days=HALF_LIFE_DAYS, shrinkage=SHRINKAGE
         "ratings": pd.DataFrame({"attack": np.exp(attack), "defense": np.exp(defense)}, index=teams),
         "base": np.exp(base),
         "home_adv": np.exp(home_adv),
+    }
+
+
+def fit_with_championship(train, as_of, half_life_days, shrinkage, xg_weight, champ_weight):
+    """fit_poisson with Championship matches too, so a newly promoted team is rated from its
+    Championship games, not only from the shrinkage toward average.
+
+    Every team has one attack and one defense rating, whichever division it played in. Championship
+    games get their own scoring level and count with champ_weight. Shrinkage pulls each team toward
+    its division's level: a fitted Championship level, times the (recency-weighted) share of the
+    team's games in the window that were in the Championship. The Championship level is set by the
+    teams that moved between divisions. Predictions (base, home advantage) are the Premier League's.
+    """
+    teams = sorted(set(train["home"]) | set(train["away"]))
+    index = {team: i for i, team in enumerate(teams)}
+    n = len(teams)
+    home_idx = train["home"].map(index).to_numpy()
+    away_idx = train["away"].map(index).to_numpy()
+    is_champ = (train["division"] == "CHAMP").to_numpy(float)
+
+    home_xg = train["home_xg"].astype(float).fillna(train["home_score"])
+    away_xg = train["away_xg"].astype(float).fillna(train["away_score"])
+    home_goals = ((1 - xg_weight) * train["home_score"] + xg_weight * home_xg).to_numpy(dtype=float)
+    away_goals = ((1 - xg_weight) * train["away_score"] + xg_weight * away_xg).to_numpy(dtype=float)
+
+    days_ago = (pd.Timestamp(as_of) - pd.to_datetime(train["date"])).dt.days.to_numpy()
+    recency = 0.5 ** (days_ago / half_life_days)
+    weights = recency * np.where(is_champ == 1, champ_weight, 1.0)
+    in_champ = np.bincount(home_idx, recency * is_champ, n) + np.bincount(away_idx, recency * is_champ, n)
+    in_all = np.bincount(home_idx, recency, n) + np.bincount(away_idx, recency, n)
+    share = in_champ / np.maximum(in_all, 1e-12)        # each team's share of games in the Championship
+
+    def unpack(params):
+        return (params[:n], params[n:2 * n], params[2 * n], params[2 * n + 1], params[2 * n + 2],
+                params[2 * n + 3], params[2 * n + 4])
+
+    def objective(params):
+        attack, defense, base, home_adv, champ_base, champ_attack, champ_defense = unpack(params)
+        level = base + champ_base * is_champ
+        log_home = level + home_adv + attack[home_idx] - defense[away_idx]
+        log_away = level + attack[away_idx] - defense[home_idx]
+        exp_home, exp_away = np.exp(log_home), np.exp(log_away)
+        log_lik = home_goals * log_home - exp_home + away_goals * log_away - exp_away
+        gap_attack = attack - champ_attack * share
+        gap_defense = defense - champ_defense * share
+        value = -np.sum(weights * log_lik) + shrinkage * np.sum(gap_attack**2 + gap_defense**2)
+
+        res_home = weights * (exp_home - home_goals)
+        res_away = weights * (exp_away - away_goals)
+        grad_attack = np.bincount(home_idx, res_home, n) + np.bincount(away_idx, res_away, n) + 2 * shrinkage * gap_attack
+        grad_defense = -np.bincount(away_idx, res_home, n) - np.bincount(home_idx, res_away, n) + 2 * shrinkage * gap_defense
+        both = res_home + res_away
+        grad = np.concatenate([grad_attack, grad_defense,
+                               [both.sum(), res_home.sum(), (both * is_champ).sum(),
+                                -2 * shrinkage * np.sum(share * gap_attack), -2 * shrinkage * np.sum(share * gap_defense)]])
+        return value, grad
+
+    result = minimize(objective, np.zeros(2 * n + 5), jac=True, method="L-BFGS-B")
+    if not result.success:
+        print("Warning: optimizer did not converge:", result.message)
+    attack, defense, base, home_adv, champ_base, champ_attack, champ_defense = unpack(result.x)
+    return {
+        "ratings": pd.DataFrame({"attack": np.exp(attack), "defense": np.exp(defense)}, index=teams),
+        "base": np.exp(base),
+        "home_adv": np.exp(home_adv),
+        "championship": {"scoring": float(np.exp(champ_base)), "attack": float(np.exp(champ_attack)),
+                         "defense": float(np.exp(champ_defense))},
     }
 
 
@@ -274,10 +358,11 @@ def backtest(games, start_season, rho=RHO, squad_values_by_week=None, value_fade
     """
     base_weight = model_settings.pop("value_weight", 0.0)
     base_shrinkage = model_settings.pop("shrinkage", SHRINKAGE)
-    teams_per_season = pd.concat([games[["season", "home"]].rename(columns={"home": "team"}),
-                                  games[["season", "away"]].rename(columns={"away": "team"})]
+    league = games[games["division"] == "EPL"] if "division" in games else games   # train on both, test the EPL
+    teams_per_season = pd.concat([league[["season", "home"]].rename(columns={"home": "team"}),
+                                  league[["season", "away"]].rename(columns={"away": "team"})]
                                  ).groupby("season")["team"].nunique()
-    test = games[games["season"] >= start_season].copy()
+    test = league[league["season"] >= start_season].copy()
     test["week"] = pd.to_datetime(test["date"]).dt.to_period("W").dt.start_time
 
     rows = []
@@ -290,7 +375,7 @@ def backtest(games, start_season, rho=RHO, squad_values_by_week=None, value_fade
         if squad_values_by_week is not None:
             model_settings["squad_values"] = squad_values_by_week.get(cutoff, {})
         season = week_games["season"].iloc[0]
-        played = ((train["season"] == season)).sum()
+        played = ((train["season"] == season) & ((train["division"] == "EPL") if "division" in train else True)).sum()
         rounds_played = played * 2 / teams_per_season[season]   # 10 matches = 1 round in a 20-team league
         weight, shrink = faded_settings(base_weight, base_shrinkage, rounds_played, value_fade_rounds)
         model = fit_poisson(train, cutoff, value_weight=weight, shrinkage=shrink, **model_settings)

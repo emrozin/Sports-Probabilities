@@ -7,7 +7,7 @@
 {% block content %}
 <div class="intro">
   <p class="eyebrow"><a href="{{ standings_url }}">{{ season }} standings</a>{% if division %} &middot; {{ division }}{% endif %}</p>
-  <h1>{{ name }}</h1>
+  <h1>{{ name }}<button type="button" class="follow" data-follow="nfl:{{ team }}" aria-pressed="false"><span aria-hidden="true">★</span> <span class="follow-label">Follow</span></button></h1>
   {% if record %}
   <p>{{ record.text }} in the {{ season }} regular season{% if is_current %} so far{% endif %}{% if record.div_rank %}, {{ record.div_rank }} in the {{ record.division }}{% endif %}. Points scored {{ record.pf }}, allowed {{ record.pa }} ({{ record.diff }}).</p>
   {% endif %}

@@ -463,3 +463,52 @@ def test_upcoming_game_pages_explain_the_pick_and_show_line_movement(nba_project
     page = TestClient(app.app).get(f"/nba/game/{gid}/").text
     assert "Why the model picks" in page and "Players expected to play" in page and "Home court" in page
     assert "How the line moved" in page and "Open" in page
+
+
+def test_game_pages_show_form_head_to_head_and_projections_against_results(nba_project):
+    import app
+    client = TestClient(app.app)
+    conn = sqlite3.connect(nba_project / "data" / "sports.db")
+    gid, game_id = conn.execute("""SELECT i.source_game_id, g.id FROM nba_game_info i JOIN games g ON g.id = i.game_id
+                                   JOIN nba_player_projections p ON p.game_id = g.id LIMIT 1""").fetchone()
+    page = client.get(f"/nba/game/{gid}/").text
+    assert "Form going into the game" in page and "in the last 10" in page and "this season" in page
+    assert "Head to head" in page
+    # the game is played: the projections saved before it are shown against what happened
+    player, team = conn.execute("SELECT player_id, team FROM nba_player_projections WHERE game_id = ? ORDER BY minutes DESC",
+                                (game_id,)).fetchone()
+    conn.execute("UPDATE games SET status = 'final', home_score = 112, away_score = 104 WHERE id = ?", (game_id,))
+    conn.execute("""INSERT INTO nba_player_games (game_id, team, player_id, name, position, starter, minutes, did_not_play,
+                                                  points, rebounds, assists, threes)
+                    VALUES (?, ?, ?, 'Star', 'G', 1, 35, 0, 31, 6, 7, 4)""", (game_id, team, player))
+    conn.commit()
+    conn.close()
+    nba_site._cache.clear()
+    page = client.get(f"/nba/game/{gid}/").text
+    assert "Projections and what happened" in page and "(31)" in page and "didn't play" in page
+    assert "scored 112" in page or "scored 104" in page
+
+
+def test_prop_lines_are_read_as_over_then_under():
+    from nba import prop_lines
+
+    def item(kind, athlete, line, price, open_price):
+        return {"type": {"name": kind}, "athlete": {"$ref": f"http://x/seasons/2027/athletes/{athlete}?lang=en"},
+                "odds": {"decimal": {"value": str(price), "open": str(open_price)}},
+                "current": {"target": {"value": line}}, "open": {"target": {"value": line}}}
+    payload = {"items": [item("Total Points", 6583, 21.5, 1.94, 1.88), item("Total Points", 6583, 21.5, 1.83, 1.88),
+                         item("Points Milestones", 6583, 22.0, 1.94, 1.88), item("Total Rebounds", 7, 10.5, 1.9, 1.9),
+                         {"type": {"name": "Team Total Points"}, "odds": {}}]}
+    rows = prop_lines.parse(payload, "401")
+    assert rows == [{"game": "401", "player_id": "6583", "stat": "points", "line": 21.5, "over_price": 1.94,
+                     "under_price": 1.83, "line_open": 21.5, "over_open": 1.88, "under_open": 1.88}]   # a lone rebounds item is skipped
+
+
+def test_prop_line_scores_compare_the_model_with_the_market():
+    from nba import prop_lines
+    df = pd.DataFrame({"game": ["1"] * 4, "stat": ["points"] * 4, "model_over": [0.7, 0.7, 0.3, 0.5],
+                       "market_over": [0.5, 0.5, 0.5, 0.5], "over_price": [1.9] * 4, "under_price": [1.9] * 4,
+                       "over_hit": [1.0, 1.0, 0.0, np.nan]})
+    s = prop_lines.scores(df)
+    assert s["lines"] == 3 and s["model"] < s["market"]
+    assert s["bets"] == 3 and s["roi"] == pytest.approx(0.9)            # three edges of 33%, all won at 1.90

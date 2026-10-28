@@ -226,3 +226,66 @@ def test_espn_lines_show_on_the_cards(cbb_project):
     cbb_site._cache.clear()
     page = TestClient(app.app).get("/cbb/").text
     assert "Market" in page and f"{home} by 4.5" in page and "141.5" in page
+
+
+# ---------------------------------------------------------------- preseason ratings, game pages, March Madness
+
+def test_early_season_ratings_lean_on_last_season_pulled_toward_the_conference(cbb_project):
+    from cbb.model import PRESEASON, current_fit, early_season, season_prior
+    conn = sqlite3.connect(cbb_project / "data" / "sports.db")
+    games = load_games(conn)
+    conn.close()
+    assert early_season("2025-11-20") and not early_season("2026-01-14") and not early_season("2026-03-01")
+    prior, start_fit = season_prior(games, 2025, PRESEASON["carry"])
+    r = start_fit["ratings"]
+    acc = [t for t, c in TEAMS if c == 2]
+    strength = (r["offense"] + r["defense"]).loc[acc]
+    pulled = (prior["offense"] + prior["defense"]).loc[acc]
+    assert pulled.std() < strength.std()                             # closer together, around the conference's average
+    assert pulled.mean() == pytest.approx(strength.mean(), abs=1e-9)
+    model = current_fit(games, "2025-11-07", 2025)                   # one round of games played: still mostly the prior
+    assert set(prior.index) <= set(model["ratings"].index)
+
+
+def test_college_basketball_game_pages(cbb_project):
+    import app
+    client = TestClient(app.app)
+    conn = sqlite3.connect(cbb_project / "data" / "sports.db")
+    upcoming = conn.execute("""SELECT i.source_game_id FROM cbb_game_info i JOIN games g ON g.id = i.game_id
+                               JOIN predictions p ON p.game_id = g.id AND p.model_name = 'cbb_points'
+                               WHERE g.status = 'scheduled' LIMIT 1""").fetchone()[0]
+    done = conn.execute("""SELECT i.source_game_id FROM cbb_game_info i JOIN games g ON g.id = i.game_id
+                           WHERE g.status = 'final' AND g.season = 2025 LIMIT 1""").fetchone()[0]
+    conn.close()
+    page = client.get(f"/cbb/game/{upcoming}/").text
+    assert "Why the model picks" in page and "Offense" in page and "Form going into the game" in page and "Head to head" in page
+    assert "Form going into the game" in client.get(f"/cbb/game/{done}/").text
+    assert f"/cbb/game/{upcoming}/" in client.get("/cbb/").text              # the cards link to it
+    assert client.get("/cbb/game/1/").status_code == 404
+
+
+def test_tournament_chances_are_exact_and_add_up():
+    from cbb.tournament import ROUNDS, SEED_ORDER, by_round, leaves, tree_from_bracket
+    regions = ["East", "West", "South", "Midwest"]
+    rows = [{"region": r, "seed": s, "team": f"{r} {s}"} for r in regions for s in SEED_ORDER]
+    rows.append({"region": "East", "seed": 16, "team": "East 16b"})          # a First Four game
+    tree = tree_from_bracket(pd.DataFrame(rows))
+    assert len(leaves(tree)) == 65
+    strength = lambda t: -int(t.split()[1]) if t.split()[1].isdigit() else -17
+    win = lambda a, b: 1 / (1 + np.exp(-(strength(a) - strength(b)) / 3))
+    table = by_round(tree, win).set_index("team")
+    assert table["Champion"].sum() == pytest.approx(1.0)
+    assert table["Final Four"].sum() == pytest.approx(4.0) and table["Sweet 16"].sum() == pytest.approx(16.0)
+    assert table.loc["East 16b", "first_four"] and table.loc[["East 16", "East 16b"], "Round of 64"].sum() == pytest.approx(1.0)
+    assert table.loc["East 1", "Champion"] > table.loc["East 8", "Champion"]
+    # East and West meet in one semifinal: their 1 seeds can't both reach the final
+    assert table.loc["East 1", "Final"] + table.loc["West 1", "Final"] <= table.loc["East 1", "Final Four"] + 1e-9 + table.loc["West 1", "Final Four"]
+    assert list(table.columns[1:len(ROUNDS) + 1]) == ROUNDS
+
+
+def test_a_played_tournament_is_rebuilt_from_its_games():
+    from cbb.tournament import leaves, tree_from_games
+    games = pd.DataFrame({"id": range(3), "date": ["2026-03-19", "2026-03-19", "2026-03-21"],
+                          "home": ["A", "C", "A"], "away": ["B", "D", "D"]})
+    tree = tree_from_games(games)
+    assert tree == (("A", "B"), ("C", "D")) and sorted(leaves(tree)) == ["A", "B", "C", "D"]

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "ucl/macros.html" import ucl_card with context %}
+{% from "charts.html" import calibration as calibration_section %}
+{% block title %}Track record | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Track record</h1>
+  <p>Live predictions are saved before kickoff and never changed; they're scored here once the games are played, by the chance they gave the result after 90 minutes.</p>
+</div>
+{% if summary %}
+<section class="today-section">
+  <h2>Live</h2>
+  <div class="scorecard">
+    <div class="stat"><p class="stat-value">{{ summary.games }}</p><p class="stat-label">Games</p></div>
+    <div class="stat"><p class="stat-value">{{ summary.loss }}</p><p class="stat-label">Log loss</p></div>
+    <div class="stat"><p class="stat-value">{{ summary.typical }}%</p><p class="stat-label">Typical chance for the result</p></div>
+  </div>
+  {% if summary.market_loss %}<p class="note">On the {{ summary.market_games }} games with DraftKings' odds: model {{ summary.model_loss_vs_market }}, market {{ summary.market_loss }} (lower is better).</p>{% endif %}
+</section>
+{% else %}
+<section class="today-section"><h2>Live</h2><p>No live predictions have been scored yet: they&rsquo;re saved from the first update that includes this competition.</p></section>
+{% endif %}
+{% if calibration %}{{ calibration_section(calibration) }}{% endif %}
+{% if backtest %}
+<section class="today-section">
+  <h2>Backtest</h2>
+  <p class="section-note">Before every {{ cup.name }} match day since {{ backtest.first_label }}, the model was fitted only on the games played before it and predicted that day's games. Settings were chosen on the Champions League's 2016-17 to 2020-21 seasons{% if cup.kind == 'league' %} (and Elo's 60% share of the league games' chances on the leagues' 2016-17 to 2020-21 seasons){% endif %}; from {{ backtest.held_label }} on, the honest test: <strong>log loss {{ "%.3f"|format(backtest.held_out.model) }}</strong> on {{ backtest.held_out.games }} games (a typical chance of {{ backtest.typical }}% for the result), against {{ "%.3f"|format(backtest.held_out.elo) }} for an Elo rating of every club{% if cup.kind == 'league' %} alone{% endif %} and {{ "%.3f"|format(backtest.held_out.base) }} knowing only how often home wins, draws and away wins happen. Lower is better.</p>
+  <div class="table-wrap"><table class="league compact">
+    <thead><tr><th scope="col">Season</th><th scope="col" class="num">Games</th><th scope="col" class="num">Model</th><th scope="col" class="num">Elo</th><th scope="col" class="num">Base rates</th></tr></thead>
+    <tbody>{% for s in backtest.seasons %}<tr class="{{ '' if s.held_out else 'muted' }}"><th scope="row">{{ s.label }}{% if not s.held_out %} <span class="small">(tuning)</span>{% endif %}</th><td class="num">{{ s.games }}</td>
+      <td class="num"><strong>{{ "%.3f"|format(s.model) }}</strong></td><td class="num">{{ "%.3f"|format(s.elo) }}</td><td class="num">{{ "%.3f"|format(s.base) }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">There are no free historical odds in the data for the {{ cup.name }}, so the backtest can't be compared with the betting market; the live record will.</p>
+</section>
+{% endif %}
+{% if rows %}
+<section class="today-section">
+  <h2>Latest scored predictions</h2>
+  <ul class="matches">{% for m in rows %}{{ ucl_card(m) }}{% endfor %}</ul>
+</section>
+{% endif %}
+{% endblock %}

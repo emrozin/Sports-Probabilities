@@ -5,9 +5,9 @@
   {% if team == current %}<span>{{ team }}</span>{% else %}<a class="team-link" href="{{ cbb_team_url(team) }}">{{ team }}</a>{% endif %}
 {%- endmacro %}
 
-{% macro game_card(g, current_team=None) %}
+{% macro game_card(g, current_team=None, single=False) %}
   {% set fav = ('home' if g.model.home >= g.model.away else 'away') if g.model else none %}
-  <li class="match card teamed{% if g.finished %} is-finished{% endif %}" style="{{ cbb_colors(g.home, g.away) }}">
+  <li class="match card teamed{% if g.finished %} is-finished{% endif %}" style="{{ cbb_colors(g.home, g.away) }}" data-teams="cbb:{{ g.home }}|cbb:{{ g.away }}">
     <div class="card-top">
       <span class="card-when">
         {% if g.outcome %}<span class="badge badge-{{ g.outcome }}">{{ g.outcome }}</span>{% endif %}
@@ -40,7 +40,7 @@
           {% if g.market %}<tr class="muted"><th scope="row">Market</th><td>{{ g.market[fav] }}% {{ g[fav] }}</td><td>{{ g.market_line or '–' }}</td><td>{{ g.market_total or '–' }}</td></tr>{% endif %}</tbody>
       </table>
     {% endif %}
-    {% if g.finished and g.source %}<p class="card-foot"><span class="source">{{ g.source }}</span></p>{% endif %}
+    {% if (g.finished and g.source) or (g.url and not single) %}<p class="card-foot">{% if g.finished and g.source %}<span class="source">{{ g.source }}</span>{% endif %}{% if g.url and not single %}<a href="{{ g.url }}">Game details</a>{% endif %}</p>{% endif %}
   </li>
 {% endmacro %}
 

@@ -106,6 +106,23 @@
 </section>
 {% endif %}
 
+{% if spreads_totals %}
+<section class="today-section">
+  <h2>Spreads and totals</h2>
+  <p class="section-note">The models predict each side's points (or goals), so they give a chance for every point spread and over/under too, not just for who wins. The same rule (an edge of 3% or more, a quarter of Kelly) was tried on those markets on the held-out seasons. It doesn't work: the model's chances are less accurate than the market's in every one, so the rule bets moneylines only.</p>
+  <div class="table-wrap">
+    <table class="league bets-table exp-table">
+      <thead><tr><th scope="col">Market</th><th scope="col" class="num">Bets</th><th scope="col" class="num wide-only">Expected</th><th scope="col" class="num">Per bet</th><th scope="col" class="num wide-only">95% range</th><th scope="col" class="num wide-only">$1,000 at ¼ Kelly</th><th scope="col" class="num"><abbr title="Log loss of the chance that the home side covers (or the total goes over): lower is better">Model vs market</abbr></th></tr></thead>
+      <tbody>{% for r in spreads_totals %}<tr><th scope="row">{{ r.name }}<span class="muted small block">{{ r.seasons }}</span></th>
+        <td class="num">{{ r.bets }}</td><td class="num wide-only">{{ r.expected }}</td><td class="num"><strong class="{{ 'bad' if r.losing }}">{{ r.roi }}</strong></td>
+        <td class="num wide-only">{{ r.range }}</td><td class="num wide-only">{{ r.kelly }}</td>
+        <td class="num">{{ r.model_loss }} <span class="muted small">vs {{ r.market_loss }}</span></td></tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <p class="note">"Model vs market" is the log loss of each side's chance (lower is better; 0.693 is a coin flip): the model's against the price's with the margin taken out. Against the spread, the NFL and college football models do worse than a coin flip, while their "expected" returns were 13–17% a bet: the market's lines already hold everything the models know, and the models' confidence about the margin is the part that's wrong. Prices: the NFL's closing spread and total prices; college football's lines with the usual −110 assumed (no prices are available); the Premier League's best over/under 2.5 price before the match and Pinnacle's Asian handicap. In the Premier League both markets came out near break-even, well within luck.</p>
+</section>
+{% endif %}
+
 <section class="today-section">
   <h2>How the stakes are worked out</h2>
   <details class="explain" open><summary>Expected return, Kelly and why only a fraction</summary>

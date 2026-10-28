@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "ucl/macros.html" import ucl_card with context %}
+{% block title %}Upcoming games | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Upcoming games</h1>
+  <p>The model's chance of each result over 90 minutes, next to the betting market's (DraftKings, with its margin taken out), for the next three weeks of {{ cup.name }} games.</p>
+  <details class="explain"><summary>How to read this</summary>
+    <p>Every club in Europe gets an attack and a defense rating from its league games and its European games together (league games say how good a club is compared with its league, European games how strong each league is) and from its Transfermarkt squad value. The two ratings give each side's expected goals, and those give the chance of every score. In knockout ties, the chance of going through adds the other leg, extra time and penalties.</p>
+    <p>Predictions are saved before kickoff (from eight days ahead) and never changed: see the <a href="{{ base }}{{ cup.url }}track-record/">track record</a>. Games further ahead are shown with today's ratings.</p>
+  </details>
+</div>
+{% if days %}
+  {% for day in days %}
+  <section class="day">
+    <h2 class="day-label">{{ day.label }}</h2>
+    <ul class="matches">{% for m in day.cards %}{{ ucl_card(m) }}{% endfor %}</ul>
+  </section>
+  {% endfor %}
+{% elif has_data %}
+  <section class="empty"><h2>No games in the next three weeks</h2><p>See the <a href="{{ base }}{{ cup.url }}table/">table and odds</a> or the <a href="{{ base }}{{ cup.url }}results/">results</a>.</p></section>
+{% else %}
+  <section class="empty"><h2>No {{ cup.name }} data yet</h2><p>Run <code>python -m ucl.import_espn --history</code> to fetch it.</p></section>
+{% endif %}
+{% endblock %}

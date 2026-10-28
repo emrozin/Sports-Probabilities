@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Club ratings | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Europe's clubs, rated</h1>
+  <p>Goals better or worse per game than an average club from the big five leagues (England, Spain, Germany, Italy, France), on a neutral ground{% if as_of %}, as of {{ as_of }}{% endif %}. From every league and European game of the last three years, recent ones counting most. Playing at home in Europe is worth about {{ home_europe }}% more goals.</p>
+</div>
+{% if leagues %}
+<section class="today-section">
+  <h2>Leagues</h2>
+  <div class="table-wrap"><table class="league compact">
+    <thead><tr><th scope="col">League</th><th scope="col" class="num">Average club</th><th scope="col" class="num">Best club</th><th scope="col" class="num">Clubs</th></tr></thead>
+    <tbody>{% for l in leagues %}<tr><th scope="row">{{ l.league }}</th><td class="num">{{ l.average }}</td><td class="num">{{ l.best }}</td><td class="num">{{ l.clubs }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">"Other leagues" are clubs from countries whose leagues aren't in the data (Croatia, Serbia, Ukraine, Czechia and others), rated from their European games only.</p>
+</section>
+{% endif %}
+{% if clubs %}
+<section class="today-section">
+  <h2>The top 60 clubs</h2>
+  <div class="table-wrap"><table class="league compact">
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Club</th><th scope="col">League</th><th scope="col" class="num">Rating</th></tr></thead>
+    <tbody>{% for c in clubs %}<tr><td class="num">{{ c.rank }}</td><th scope="row">{{ ucl_chip(c.team) }}{% if c.url %}<a class="team-link" href="{{ c.url }}">{{ c.team }}</a>{% else %}{{ c.team }}{% endif %}</th><td>{{ c.league }}</td><td class="num">{{ c.rating }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">Linked clubs are in this season&rsquo;s {{ cup.name }}.</p>
+</section>
+{% else %}
+<section class="empty"><h2>No ratings yet</h2></section>
+{% endif %}
+{% endblock %}

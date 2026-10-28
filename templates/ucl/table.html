@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Table and odds | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>{% if season_name %}{{ season_name }} league phase{% else %}League phase{% endif %}</h1>
+  <p>The table so far, and each club's chances from 10,000 simulations of every game left{% if odds_date %} (run {{ odds_date }}){% endif %}. Each club plays {{ games_each }} games; 1st to 8th go straight to the round of 16, 9th to 24th play the knockout play-offs, 25th to 36th are out.</p>
+  <details class="explain"><summary>How the simulation works</summary>
+    <p>Each game still to play is played out from the model's expected goals, with the results so far kept. Ties on points are split by goal difference, goals scored, away goals, wins and away wins (UEFA's later tie-breakers aren't modelled). The knockout bracket follows the seeding rules: 9th and 10th meet 23rd or 24th, and so on, the winners meet the top eight, and 1st and 2nd are kept in opposite halves. Two-legged ties include extra time and penalties; the final is on a neutral ground. Once the real pairings of a round are drawn, they're used.</p>
+  </details>
+</div>
+{% if favorites %}
+<section class="today-section">
+  <h2>Favorites to win it</h2>
+  <ol class="favorites">{% for f in favorites %}<li>{{ ucl_chip(f.team) }}<a class="team-link" href="{{ f.url }}">{{ f.team }}</a> <strong>{{ f.pct }}</strong></li>{% endfor %}</ol>
+</section>
+{% endif %}
+{% if rows %}
+<div class="table-wrap">
+  <table class="league ucl-table">
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Team</th><th scope="col" class="num"><abbr title="Played">P</abbr></th>
+      <th scope="col" class="num wide-only"><abbr title="Won">W</abbr></th><th scope="col" class="num wide-only"><abbr title="Drawn">D</abbr></th><th scope="col" class="num wide-only"><abbr title="Lost">L</abbr></th>
+      <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
+      <th scope="col" class="num"><abbr title="Chance of finishing 1st-8th">Top 8</abbr></th><th scope="col" class="num wide-only"><abbr title="Chance of finishing 1st-24th">Top 24</abbr></th>
+      <th scope="col" class="num wide-only"><abbr title="Chance of reaching the quarter-finals">QF</abbr></th><th scope="col" class="num wide-only"><abbr title="Chance of reaching the final">Final</abbr></th>
+      <th scope="col" class="num"><abbr title="Chance of winning the {{ cup.name }}">Win</abbr></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="zone-{{ r.zone }}{% if r.pos in (8, 24) %} zone-line{% endif %}" data-teams="{{ cup.code|lower }}:{{ r.team }}">
+        <td class="num pos">{{ r.pos }}</td>
+        <th scope="row">{{ ucl_chip(r.team) }}<a class="team-link" href="{{ r.url }}"><span class="long-name">{{ r.team }}</span><span class="short-name">{{ r.short }}</span></a></th>
+        <td class="num">{{ r.played }}</td><td class="num wide-only">{{ r.won }}</td><td class="num wide-only">{{ r.drawn }}</td><td class="num wide-only">{{ r.lost }}</td>
+        <td class="num">{{ r.gd }}</td><td class="num pts">{{ r.points }}</td>
+        <td class="num">{{ r.odds.top8 }}</td><td class="num wide-only">{{ r.odds.top24 }}</td><td class="num wide-only">{{ r.odds.quarterfinals }}</td>
+        <td class="num wide-only">{{ r.odds.final }}</td><td class="num"><strong>{{ r.odds.champion }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="note">The line under 8th marks the round of 16; under 24th, the play-offs. Odds are from the last update; the table is as of the last result.</p>
+{% else %}
+<section class="empty"><h2>No league phase yet</h2></section>
+{% endif %}
+{% endblock %}

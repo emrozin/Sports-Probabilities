@@ -6,7 +6,7 @@
 {% block content %}
 <div class="intro">
   <p class="eyebrow"><a href="{{ base }}/cfb/ratings/{% if conference %}?conference={{ conference|urlencode }}{% endif %}">{{ conference or 'Ratings' }}</a></p>
-  <h1>{{ team }}</h1>
+  <h1>{{ team }}<button type="button" class="follow" data-follow="cfb:{{ team }}" aria-pressed="false"><span aria-hidden="true">★</span> <span class="follow-label">Follow</span></button></h1>
   <p>{{ record }} in {{ season }}{% if conf_record %} ({{ conf_record }} in conference){% endif %}.{% if rating %} Model rating {{ rating }} points per game against an average FBS team, {{ rank }} among FBS schools.{% endif %}</p>
   {% if quarterbacks %}<p>Starting quarterbacks: {% for q in quarterbacks %}{{ q.name }} ({{ q.starts }} start{{ '' if q.starts == 1 else 's' }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
   {% if seasons|length > 1 %}

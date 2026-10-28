@@ -22,7 +22,7 @@
 {% else %}
   <section class="empty">
     <h2>No upcoming games predicted{% if conference %} for the {{ conference }}{% endif %}</h2>
-    <p>Predictions for the next eight days are made on Tuesdays and Fridays. Run <code>python -m cfb.predict_upcoming</code> to make them now.</p>
+    <p>Predictions for the next eight days are made every morning and evening. Run <code>python -m cfb.predict_upcoming</code> to make them now.</p>
     <p><a class="button" href="{{ base }}/cfb/results/">See recent results</a></p>
   </section>
 {% endif %}

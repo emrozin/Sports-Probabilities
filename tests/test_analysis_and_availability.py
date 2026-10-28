@@ -60,3 +60,23 @@ def test_availability_failure_never_stops_the_update(project, monkeypatch, capsy
     fetch_availability.main()  # must not raise
     assert "Skipping this snapshot" in capsys.readouterr().out
     assert not (project / "records" / "availability").exists()
+
+
+def test_team_news_lists_who_is_out_regulars_first(tmp_path):
+    import pandas as pd
+    from epl.team_news import latest, team_news
+    folder = tmp_path / "availability"
+    folder.mkdir()
+    rows = [(1, "Bukayo Saka", "Arsenal", "MID", "injured", 0, 0, "Hamstring injury", 9, 800),
+            (2, "Backup Keeper", "Arsenal", "GK", "doubtful", 50, 50, "Knock", 0, 0),
+            (3, "Declan Rice", "Arsenal", "MID", "available", 100, 100, "", 10, 900),
+            (4, "James Maddison", "Spurs", "MID", "suspended", 0, 0, "Suspended until 2 Nov", 8, 700)]
+    pd.DataFrame(rows, columns=["player_id", "name", "team", "position", "status", "chance_this_round",
+                                "chance_next_round", "news", "starts", "minutes"]).to_csv(folder / "2026-10-20.csv", index=False)
+    pd.DataFrame(columns=["team"]).to_csv(folder / "2026-10-01.csv", index=False)
+    snap, day = latest(folder)
+    assert day == "2026-10-20"                              # the newest snapshot
+    arsenal = team_news("Arsenal", snap)
+    assert [p["name"] for p in arsenal] == ["Bukayo Saka", "Backup Keeper"]     # available players left out
+    assert arsenal[0]["out"] and arsenal[0]["regular"] and arsenal[1]["chance"] == 50 and not arsenal[1]["regular"]
+    assert team_news("Tottenham", snap)[0]["name"] == "James Maddison"         # FPL's "Spurs" is our "Tottenham"

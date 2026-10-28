@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "ucl/macros.html" import ucl_card with context %}
+{% from "macros.html" import season_picker %}
+{% block title %}Results{% if season_name %} {{ season_name }}{% endif %} | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Results{% if season_name %}: {{ season_name }}{% endif %}</h1>
+  <p>Each match with the chance the model gave the result after 90 minutes. "Saved before kickoff" predictions are the live record; "Backtest" ones were made later, by the same model fitted only on games played before that day, so none of them could see the result.</p>
+  <details class="explain">
+    <summary>How to read this</summary>
+    <p>The big numbers are the final score. In each bar, the result that happened is in full color and the others are faded: the thick bar is the model's forecast, the thin one the betting market's (DraftKings') closing view. Click a team to see all its games, or "Match details" for the full breakdown.</p>
+  </details>
+  {% if seasons|length > 1 %}{{ season_picker(seasons) }}{% endif %}
+</div>
+{% for day in days %}
+<section class="day">
+  <h2 class="day-label">{{ day.label }}</h2>
+  <ul class="matches">{% for m in day.cards %}{{ ucl_card(m) }}{% endfor %}</ul>
+</section>
+{% else %}
+<section class="empty"><h2>No results yet</h2></section>
+{% endfor %}
+{% endblock %}

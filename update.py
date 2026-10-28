@@ -44,7 +44,8 @@ College basketball (cbb/):
 
 Betting lines (espn.py): ESPN's lines for recent and upcoming NBA, college basketball and college
 football games, saved as the season goes (run last, after every sport's games are imported); then
-betting.py logs the bets its rule suggests, for the betting page's live record.
+betting.py logs the bets its rule suggests, for the betting page's live record. Last, warm_cache.py
+prepares the slow parts of the website (the NBA model, the betting page's past-season tests).
 
 Each step is a module run with "python -m", e.g. python -m epl.import_epl. Within a sport, a
 failed step stops that sport's remaining steps (they depend on it), but the other sport still
@@ -66,6 +67,7 @@ from pathlib import Path
 SPORTS = {
     "Premier League": [
         ("epl.import_epl", "Results, stats and odds"),
+        ("epl.import_epl", "Championship results (to rate newly promoted teams)", ["--league", "CHAMP"]),
         ("epl.import_understat", "Expected goals (xG)"),
         ("epl.run_backtest", "Backtest predictions"),
         ("epl.import_fixtures", "Upcoming fixtures and odds"),
@@ -86,6 +88,7 @@ SPORTS = {
         ("nba.run_backtest", "Backtest predictions"),
         ("nba.predict_upcoming", "Predictions for upcoming games"),
         ("nba.predict_players", "Player projections for upcoming games"),
+        ("nba.prop_lines", "Player prop lines to test against (DraftKings via ESPN)"),
         ("nba.season", "Playoff odds (season simulation)"),
     ],
     "College football": [
@@ -99,21 +102,35 @@ SPORTS = {
         ("cbb.run_backtest", "Backtest predictions"),
         ("cbb.predict_upcoming", "Predictions for upcoming games"),
     ],
+    "Champions League": [
+        ("ucl.import_espn", "Games, results, fixtures and odds (ESPN)"),
+        ("ucl.import_understat", "Expected goals (xG) for the big five leagues (Understat)"),
+        ("ucl.squad_values", "Squad values (Transfermarkt)"),
+        ("ucl.run_backtest", "Backtest predictions (new match days)"),
+        ("ucl.predict_upcoming", "Predictions for upcoming games"),
+        ("ucl.season", "Knockout odds (season simulation)"),
+    ],
     "Betting lines": [
         ("espn", "Lines for NBA and college games (ESPN)"),
         ("betting", "Suggested bets and line movement, logged (betting.py)"),
+    ],
+    "Website": [
+        ("warm_cache", "Prepare the slow parts of the pages (warm_cache.py)"),
     ],
 }
 LATE_STEPS = {"Late news": [
     ("nba.live", "NBA rosters and injury report (ESPN)"),
     ("nba.predict_upcoming", "NBA predictions for upcoming games"),
     ("nba.predict_players", "NBA player projections"),
+    ("nba.prop_lines", "NBA player prop lines (DraftKings via ESPN)"),
     ("espn", "Lines for NBA and college games (ESPN)"),
     ("betting", "Suggested bets and line movement, logged (betting.py)"),
+    ("warm_cache", "Prepare the slow parts of the pages (warm_cache.py)"),
 ]}
 RECORDING_STEPS = {"epl.predict_upcoming", "nfl.predict_upcoming", "nfl.predict_players", "nfl.season",
-                   "nba.live", "nba.predict_upcoming", "nba.predict_players", "nba.season",
-                   "cfb.predict_upcoming", "cfb.conference", "cbb.predict_upcoming", "espn", "betting"}
+                   "nba.live", "nba.predict_upcoming", "nba.predict_players", "nba.prop_lines", "nba.season",
+                   "cfb.predict_upcoming", "cfb.conference", "cbb.predict_upcoming", "ucl.predict_upcoming", "ucl.season",
+                   "espn", "betting"}
 BUILD_STEP = ("build_site", "Static website (docs/)")
 
 
@@ -139,8 +156,8 @@ def main() -> None:
 
     for sport, steps in (LATE_STEPS if "--late" in args else SPORTS).items():
         print(f"\n{'=' * 60}\n{sport}")
-        for module, label in steps:
-            ok, seconds = run(module, label, record if module in RECORDING_STEPS else [])
+        for module, label, *fixed in steps:          # a step can carry its own arguments
+            ok, seconds = run(module, label, (fixed[0] if fixed else []) + (record if module in RECORDING_STEPS else []))
             timings.append((f"{sport}: {label}", seconds))
             if not ok:
                 failed.append(f"{sport}: {label} ({module})")

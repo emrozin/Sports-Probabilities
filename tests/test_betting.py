@@ -133,3 +133,36 @@ def test_betting_page_shows_the_experiments(project):
     text = TestClient(app.app).get("/betting/").text
     assert "What we tried" in text and "Bet at the best price" in text and "−3.4%" in text
     assert overview.experiment_rows()[0]["kept"]
+
+
+def test_calibration_groups_games_from_the_favorites_side():
+    from charts import calibration_chart
+    p = np.array([0.65] * 40 + [0.30] * 40)            # the second group: the away team is the 70% favorite
+    won = np.array([1] * 26 + [0] * 14 + [0] * 28 + [1] * 12, float)
+    chart = calibration_chart((p, won), None)
+    groups = {g["range"]: g for g in chart["live"]}
+    assert groups["60–70%"]["actual"] == pytest.approx(65.0) and groups["60–70%"]["n"] == 40
+    assert groups["70–80%"]["predicted"] == pytest.approx(70.0) and groups["70–80%"]["actual"] == pytest.approx(70.0)
+    assert calibration_chart((np.array([0.6]), np.array([1.0])), None) is None       # too few to show
+
+
+def test_spread_and_total_chances_and_settling():
+    import betting_lines as bl
+    assert bl.halves(-0.75) == [-1.0, -0.5] and bl.halves(-0.5) == [-0.5] and bl.halves(-1.0) == [-1.0]
+    win, push, lose = bl.normal_outcome(3.0, 13.0, -3.0)              # expected margin 3, home -3: a whole-number line
+    assert push > 0.02 and win == pytest.approx(lose, abs=1e-9) and win + push + lose == pytest.approx(1)
+    win, push, lose = bl.normal_outcome(0.0, 13.0, 2.5)
+    assert push == 0 and win > 0.5
+    assert bl.settle_line(1, -0.75, 2.0) == pytest.approx(0.5)        # won by one at -0.75: half won, half refunded
+    assert bl.settle_line(2, -0.75, 2.0) == pytest.approx(1.0)
+    assert bl.settle_line(0, -0.25, 2.0) == pytest.approx(-0.5)       # a draw at -0.25: half refunded, half lost
+    assert bl.settle_line(-3, 3.0, 1.9) == 0.0                        # a push
+    import numpy as np
+    from epl.model import scoreline_grid
+    grid = scoreline_grid(1.5, 1.0)
+    grid = grid / grid.sum()
+    h, a = np.indices(grid.shape)
+    over = bl.grid_outcome(grid, h + a, -2.5)
+    under = bl.grid_outcome(grid, -(h + a), 2.5)
+    assert over[0] == pytest.approx(under[2]) and over[1] == 0
+    assert bl.expected_return([over], 1 / over[0]) == pytest.approx(0, abs=1e-9)   # a fair price returns nothing

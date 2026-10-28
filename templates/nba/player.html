@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ name }} | NBA probabilities{% endblock %}
+{% block main_style %} class="teamed team-page" style="{{ nba_team_colors(team) }}"{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow"><a href="{{ nba_team_url(team) }}">{{ team }}</a>{% if position %} &middot; {{ position }}{% endif %}</p>
+  <h1>{{ name }}</h1>
+  {% if injury %}<p class="out-list"><strong>{{ injury.status }}</strong>{% if injury.comment %}: {{ injury.comment }}{% endif %}{% if injury.return_date %} (expected back {{ injury.return_date }}){% endif %}</p>{% endif %}
+  {% if rating %}<p>Model rating <strong>{{ rating }}</strong> points per game: how much his team gains with him on the floor for a whole game, against an average player, after allowing for everyone else.</p>{% endif %}
+</div>
+
+{% if upcoming %}
+<section class="game-section">
+  <h2>Next {{ 'game' if upcoming|length == 1 else 'games' }}</h2>
+  <div class="table-wrap"><table class="league lineup-table">
+    <thead><tr><th scope="col">Game</th><th scope="col" class="num">Min</th><th scope="col" class="num">Pts</th><th scope="col" class="num">Reb</th><th scope="col" class="num">Ast</th><th scope="col" class="num">3PM</th></tr></thead>
+    <tbody>{% for u in upcoming %}<tr><th scope="row"><a href="{{ u.url }}">{{ u.matchup }}</a><span class="muted small block">{{ u.date }}</span></th><td class="num">{{ u.minutes }}</td><td class="num">{{ u.points }}</td><td class="num">{{ u.rebounds }}</td><td class="num">{{ u.assists }}</td><td class="num">{{ u.threes }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">The model's projection, saved before tip-off.</p>
+</section>
+{% endif %}
+
+{% if seasons %}
+<section class="game-section">
+  <h2>Season averages</h2>
+  <div class="table-wrap"><table class="league lineup-table">
+    <thead><tr><th scope="col">Season</th><th scope="col" class="num">Games</th><th scope="col" class="num">Min</th><th scope="col" class="num">Pts</th><th scope="col" class="num">Reb</th><th scope="col" class="num">Ast</th><th scope="col" class="num">3PM</th></tr></thead>
+    <tbody>{% for s in seasons %}<tr><th scope="row">{{ s.label }}</th><td class="num">{{ s.games }}</td><td class="num">{{ s.minutes }}</td><td class="num">{{ s.points }}</td><td class="num">{{ s.rebounds }}</td><td class="num">{{ s.assists }}</td><td class="num">{{ s.threes }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">Regular season, games he played.</p>
+</section>
+{% endif %}
+
+{% if log %}
+<section class="game-section lineups">
+  <h2>Recent games</h2>
+  <div class="table-wrap"><table class="league lineup-table">
+    <thead><tr><th scope="col">Game</th><th scope="col" class="num">Min</th><th scope="col" class="num">Pts</th><th scope="col" class="num">Reb</th><th scope="col" class="num">Ast</th><th scope="col" class="num">3PM</th></tr></thead>
+    <tbody>{% for g in log %}<tr{% if not g.played %} class="muted dnp"{% endif %}><th scope="row"><a href="{{ g.url }}">{{ g.venue }} {{ g.opponent }}</a><span class="muted small block">{{ g.date }} &middot; {{ g.result }}{% if not g.played %} &middot; {{ g.dnp }}{% endif %}</span></th>
+      <td class="num">{% if g.proj %}{{ g.proj.minutes }}{% endif %}<span class="{{ 'muted actual' if g.proj else '' }}">{% if g.proj %}({{ g.minutes }}){% else %}{{ g.minutes }}{% endif %}</span></td>
+      {% for st in ['points', 'rebounds', 'assists', 'threes'] %}<td class="num">{% if g.proj %}{{ g.proj[st] }}<span class="muted actual">({% if g.played %}{{ g.stats[st] }}{% else %}–{% endif %})</span>{% elif g.played %}{{ g.stats[st] }}{% else %}–{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">Newest first. Where the model saved a projection before the game, it's shown with what happened underneath in brackets.</p>
+</section>
+{% endif %}
+{% endblock %}

@@ -96,7 +96,7 @@ def never_the_real_database(tmp_path, monkeypatch):
     at an empty temporary one, so no test ever reads your real data (tests that need data set their own)."""
     import importlib
     missing = tmp_path / "no-database" / "sports.db"
-    for name in ("app", "nfl.site", "cfb.site", "cbb.site", "nba.site", "overview"):
+    for name in ("app", "nfl.site", "cfb.site", "cbb.site", "nba.site", "overview", "ucl.site"):
         module = importlib.import_module(name)
         monkeypatch.setattr(module, "DB_PATH", missing)
         module._cache.clear()

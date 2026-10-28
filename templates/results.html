@@ -1,55 +1,27 @@
 {% extends "base.html" %}
-{% from "macros.html" import finished_match %}
-{% block title %}Recent results | Premier League probabilities{% endblock %}
+{% from "macros.html" import match_card, season_picker %}
+{% block title %}Results{% if season_name %} {{ season_name }}{% endif %} | Premier League probabilities{% endblock %}
 
 {% block content %}
 <div class="intro">
-  <h1>Results vs predictions</h1>
-  <p class="lede">How the model's forecasts compared with what happened.</p>
+  <h1>Results{% if season_name %}: {{ season_name }}{% endif %}</h1>
+  <p>Each match with the chance the model gave the result. "Saved before kickoff" predictions are the live record; "Backtest" ones were made later, by the same model fitted only on matches played before that week, so none of them could see the result.</p>
   <details class="explain">
     <summary>How to read this</summary>
     <p>The big numbers are the final score. In each bar, the result that happened is in full color and the others are faded: the thick bar is the model's forecast, the thin one the betting market's closing view. Click a team to see all its matches, or "Match details" for the full breakdown.</p>
   </details>
+  {% if seasons and seasons|length > 1 %}{{ season_picker(seasons) }}{% endif %}
 </div>
 
-{% if days %}
-  <nav class="week-nav" aria-label="Weeks">
-    {% if previous_url %}<a href="{{ previous_url }}">&larr; Previous week</a>{% else %}<span></span>{% endif %}
-    <p class="week-label">{{ week_label }}</p>
-    {% if next_url %}<a href="{{ next_url }}">Next week &rarr;</a>{% else %}<span></span>{% endif %}
-  </nav>
-
-  {% if summary %}
-  <div class="scorecard">
-    <div class="stat">
-      <p class="stat-value">{{ summary.model_typical }}%</p>
-      <p class="stat-label">Model's typical probability for the actual result</p>
-    </div>
-    <div class="stat">
-      <p class="stat-value stat-muted">{{ summary.market_typical }}%</p>
-      <p class="stat-label">Betting market's</p>
-    </div>
-    <div class="stat">
-      <p class="stat-value stat-muted">{{ summary.model_closer }} of {{ summary.games }}</p>
-      <p class="stat-label">Matches where the model gave the result a higher chance</p>
-    </div>
-  </div>
-  {% endif %}
-
-  {% for day in days %}
-  <section class="day">
-    <h2>{{ day.label }}</h2>
-    <ul class="matches">
-      {% for m in day.matches %}{{ finished_match(m) }}{% endfor %}
-    </ul>
-  </section>
-  {% endfor %}
-
-  <p class="note">Before this season's live predictions began, results use the backtest: each forecast was made using only matches played before that week, so none of them could see the result.</p>
+{% for day in days %}
+<section class="day">
+  <h2>{{ day.label }}</h2>
+  <ul class="matches">{% for m in day.matches %}{{ match_card(m) }}{% endfor %}</ul>
+</section>
 {% else %}
-  <section class="empty">
-    <h2>No results to show yet</h2>
-    <p>Run <code>python -m epl.run_backtest</code> to generate predictions for past matches.</p>
-  </section>
-{% endif %}
+<section class="empty">
+  <h2>No results to show yet</h2>
+  <p>Run <code>python -m epl.run_backtest</code> to generate predictions for past matches.</p>
+</section>
+{% endfor %}
 {% endblock %}

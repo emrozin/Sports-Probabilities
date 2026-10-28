@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Table and odds | {{ cup.name }} probabilities{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>{% if season_name %}{{ cup.name }} {{ season_name }}{% else %}{{ cup.name }}{% endif %}</h1>
+  <p>The table so far, and each club's chances from 10,000 simulations of every game left{% if odds_date %} (run {{ odds_date }}){% endif %}.{% if games_each %} Each club plays {{ games_each }} games.{% endif %}</p>
+  <details class="explain"><summary>How the simulation works</summary>
+    <p>Each game still to play is played out from the model's expected goals (with the home advantage of league games), and the results so far are kept. Ties on points are split by goal difference, then goals scored, then at random (head-to-head records aren't modelled). "Top 4" is a top-four finish, the usual Champions League places; "Bottom 3" is the bottom three, the relegation places (in leagues with a play-off, 3rd from bottom goes to the play-off).</p>
+  </details>
+</div>
+{% if favorites %}
+<section class="today-section">
+  <h2>Favorites for the title</h2>
+  <ol class="favorites">{% for f in favorites %}<li>{{ ucl_chip(f.team) }}<a class="team-link" href="{{ f.url }}">{{ f.team }}</a> <strong>{{ f.pct }}</strong></li>{% endfor %}</ol>
+</section>
+{% endif %}
+{% if rows %}
+<div class="table-wrap">
+  <table class="league ucl-table league-odds">
+    <thead><tr><th scope="col" class="num">#</th><th scope="col">Team</th><th scope="col" class="num wide-only"><abbr title="Played">P</abbr></th>
+      <th scope="col" class="num wide-only"><abbr title="Won">W</abbr></th><th scope="col" class="num wide-only"><abbr title="Drawn">D</abbr></th><th scope="col" class="num wide-only"><abbr title="Lost">L</abbr></th>
+      <th scope="col" class="num wide-only"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
+      <th scope="col" class="num wide-only"><abbr title="Expected points at the end of the season">Proj</abbr></th>
+      <th scope="col" class="num"><abbr title="Chance of winning the league">Title</abbr></th><th scope="col" class="num"><abbr title="Chance of finishing in the top four">Top 4</abbr></th>
+      <th scope="col" class="num"><abbr title="Chance of finishing in the bottom three">Bottom 3</abbr></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr class="zone-{{ r.zone }}{% if r.pos == 4 %} zone-line{% endif %}{% if r.pos == rows|length - 2 %} relegation-line{% endif %}{% if r.zone == 'bottom' %} relegation{% endif %}" data-teams="{{ cup.code|lower }}:{{ r.team }}">
+        <td class="num pos">{{ r.pos }}</td>
+        <th scope="row">{{ ucl_chip(r.team) }}<a class="team-link" href="{{ r.url }}"><span class="long-name">{{ r.team }}</span><span class="short-name">{{ r.short }}</span></a></th>
+        <td class="num wide-only">{{ r.played }}</td><td class="num wide-only">{{ r.won }}</td><td class="num wide-only">{{ r.drawn }}</td><td class="num wide-only">{{ r.lost }}</td>
+        <td class="num wide-only">{{ r.gd }}</td><td class="num pts">{{ r.points }}</td><td class="num wide-only">{{ r.exp_points }}</td>
+        <td class="num"><strong>{{ r.odds.champion }}</strong></td><td class="num">{{ r.odds.top4 }}</td><td class="num">{{ r.odds.bottom3 }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="note">The line under 4th marks the top four; the shaded rows are the bottom three. Odds are from the last update; the table is as of the last result.</p>
+{% else %}
+<section class="empty"><h2>No games yet this season</h2></section>
+{% endif %}
+{% endblock %}

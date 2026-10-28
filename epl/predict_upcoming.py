@@ -24,7 +24,7 @@ import pandas as pd
 
 from epl import records
 from epl.import_fixtures import ensure_kickoff_column
-from epl.model import TRAINING_YEARS, fit_poisson, load_games, load_market, load_totals, predict
+from epl.model import TRAINING_YEARS, fit_poisson, load_market, load_totals, load_with_championship, predict
 
 DB_PATH = "data/sports.db"
 MODEL_NAME = "poisson_xg"
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
         return
 
     # Train only on matches finished before today, exactly like the backtest.
-    games = load_games(conn)
+    games = load_with_championship(conn)          # the Championship rates newly promoted teams
     window_start = (pd.Timestamp(today) - pd.DateOffset(years=TRAINING_YEARS)).strftime("%Y-%m-%d")
     train = games[(games["date"] >= window_start) & (games["date"] < today)]
     model = fit_poisson(train, today)

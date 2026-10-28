@@ -17,19 +17,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from epl.model import (TRAINING_YEARS, add_scores, fit_poisson, goal_markets, load_games, load_market,
-                   load_totals, scoreline_grid)
+                   load_totals, load_with_championship, scoreline_grid)
 from epl.predict_upcoming import MODEL_NAME, MODEL_VERSION
 from epl.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
 from epl.simulate import remaining_fixtures, simulate_season
 import betting
 import blend
 from epl import blend as epl_blend
-from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability
+from web import BASE, ROOT, day_label, edge, odds_text, ordinal, signed_number, slugify, templates, typical_probability
 
 DB_PATH = ROOT / "data" / "sports.db"
 
@@ -172,7 +172,8 @@ def cached_ratings() -> dict:
     """Current model ratings, refitted when the data or the date changes."""
     d, today = data(), date.today().isoformat()
     if d.get("ratings_day") != today:
-        d["ratings"] = current_ratings(d["games"], today)
+        with connect() as conn:                      # Premier League and Championship (for promoted teams)
+            d["ratings"] = current_ratings(load_with_championship(conn), today)
         d["ratings_day"] = today
     return d["ratings"]
 
@@ -304,7 +305,7 @@ def current_ratings(games: pd.DataFrame, today: str) -> dict:
     window_start = (pd.Timestamp(today) - pd.DateOffset(years=TRAINING_YEARS)).strftime("%Y-%m-%d")
     train = games[(games["date"] >= window_start) & (games["date"] < today)]
     model = fit_poisson(train, today)
-    model["matches_used"] = len(train)
+    model["matches_used"] = int((train["division"] == "EPL").sum()) if "division" in train else len(train)
     return model
 
 
@@ -346,7 +347,7 @@ def load_upcoming(conn, today: str) -> pd.DataFrame:
                    .merge(load_totals(conn, closing=False), on="id", how="left"))
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/premier-league/", response_class=HTMLResponse)
 def upcoming(request: Request):
     with connect() as conn:
         matches = load_upcoming(conn, date.today().isoformat())
@@ -389,39 +390,42 @@ def results_latest(request: Request):
     return results_page(request, None)
 
 
-@app.get("/results/{week}/", response_class=HTMLResponse)
-def results_week(request: Request, week: str):
-    return results_page(request, week)
+@app.get("/results/{season}/", response_class=HTMLResponse)
+def results_season(request: Request, season: str):
+    if season.isdigit():
+        return results_page(request, int(season))
+    try:                        # an old weekly address (/results/2026-10-19/): that week's season
+        day = pd.Timestamp(season)
+    except ValueError:
+        raise HTTPException(status_code=404)
+    seasons = set(data()["finished"]["season"])
+    start = day.year if day.month >= 7 else day.year - 1
+    if start not in seasons:
+        raise HTTPException(status_code=404)
+    return RedirectResponse(f"{BASE}/results/{start}/", status_code=301)
 
 
-def results_page(request: Request, week: str | None):
+def results_page(request: Request, season: int | None):
+    """A season's results, newest first, each with the chance the model gave it (the same layout
+    as the other soccer competitions' results pages)."""
     d = data()
     df = d["finished"].merge(d["predictions"], on="id")
     if df.empty:
         return templates.TemplateResponse(request, "results.html", {"active": "results", "days": []})
-
-    df["week"] = week_of(df["date"])
-    weeks = sorted(df["week"].unique())
-    if week is None:
-        week = weeks[-1]
-    elif week not in weeks:
+    seasons = sorted(df["season"].unique())
+    if season is None:
+        season = seasons[-1]
+    elif season not in seasons:
         raise HTTPException(status_code=404)
-    position = weeks.index(week)
-
-    wk = (df[df["week"] == week].merge(d["closing"], on="id", how="left")
-                                 .merge(d["totals"], on="id", how="left").sort_values(["date", "home"]))
-    days = [{"label": day_label(day), "matches": [match_card(m) for m in group.itertuples()]}
-            for day, group in wk.groupby("date", sort=True)]
-
-    first, last = wk["date"].min(), wk["date"].max()
-    week_url = lambda w: f"{BASE}/results/{w}/"
+    part = (df[df["season"] == season].merge(d["closing"], on="id", how="left")
+                                      .merge(d["totals"], on="id", how="left").sort_values(["date", "home"]))
+    days = [{"label": day_label(day, with_year=True), "matches": [match_card(m) for m in group.itertuples()]}
+            for day, group in sorted(part.groupby("date"), key=lambda kv: kv[0], reverse=True)]
     return templates.TemplateResponse(request, "results.html", {
         "active": "results",
         "days": days,
-        "summary": forecast_summary(wk),
-        "week_label": day_label(first) if first == last else f"{day_label(first)} to {day_label(last)}",
-        "previous_url": week_url(weeks[position - 1]) if position > 0 else None,
-        "next_url": week_url(weeks[position + 1]) if position < len(weeks) - 1 else None,
+        "season_name": season_label(season),
+        "seasons": season_options(seasons, season, lambda s: f"{BASE}/results/{s}/"),
     })
 
 
@@ -448,6 +452,17 @@ def table_page(request: Request, season: int | None):
     table = league_table(finished, season)
     relegation_from = len(table) - 2  # the bottom three go down
 
+    # this season's chances from the season simulation (the forecast page has every position)
+    odds, favorites, forecast = {}, [], cached_forecast() if season == seasons[-1] else None
+    if forecast is not None and forecast["season"] == season:
+        probs, n = forecast["position_probs"], len(forecast["teams"])
+        for i, team in enumerate(forecast["teams"]):
+            odds[team] = {"title": odds_text(probs[i, 0]), "top_four": odds_text(probs[i, :4].sum()),
+                          "relegation": odds_text(probs[i, n - 3:].sum()),
+                          "expected_points": f"{forecast['expected_points'][i]:.0f}", "p_title": probs[i, 0]}
+        favorites = [{"team": t, "pct": o["title"], "url": team_url(t)}
+                     for t, o in sorted(odds.items(), key=lambda kv: -kv[1]["p_title"]) if o["p_title"] >= 0.005][:6]
+
     rows = [{
         "position": r.position,
         "team": r.team,
@@ -460,6 +475,7 @@ def table_page(request: Request, season: int | None):
         "form": r.form,
         "relegation": r.position >= relegation_from,
         "first_relegation": r.position == relegation_from,
+        "odds": odds.get(r.team),
     } for r in table.itertuples()]
 
     return templates.TemplateResponse(request, "table.html", {
@@ -468,6 +484,9 @@ def table_page(request: Request, season: int | None):
         "season": season_label(season),
         "is_current": season == seasons[-1],
         "has_xg": bool(table["xg_games"].sum()),
+        "has_odds": bool(odds),
+        "favorites": favorites,
+        "simulations": "{:,}".format(forecast["simulations"]) if odds else None,
         "seasons": season_options(seasons, season, lambda s: f"{BASE}/table/{s}/"),
     })
 
@@ -684,9 +703,16 @@ def match_page(request: Request, match_date: str, slug: str):
 
     with connect() as conn:
         moved = betting.movement_chart(conn, int(m.id), m.home, m.away)
+    news = None
+    if not finished:
+        from epl.team_news import latest, team_news
+        snap, snap_date = latest()
+        if snap_date:
+            news = {"date": day_label(snap_date), "sides": [{"team": t, "players": team_news(t, snap)} for t in (m.away, m.home)]}
     return templates.TemplateResponse(request, "match.html", {
         "active": None,
         "moved": moved,
+        "news": news,
         "m": card,
         "finished": finished,
         "date": day_label(match_date),
@@ -787,9 +813,16 @@ def track_record(request: Request):
                        .merge(d["closing"], on="id", how="left")
                        .merge(d["totals"], on="id", how="left")
                        .sort_values(["date", "home"]))
+    from charts import calibration_chart
+    past = d["finished"].merge(d["backtest"], on="id")
+    past = past[past["season"] >= HELD_OUT_FROM]
+    three_way = lambda f: (f[["model_home", "model_draw", "model_away"]].to_numpy(float).ravel(),
+                           np.column_stack([f["result"] == o for o in ("home", "draw", "away")]).astype(float).ravel())
+    calib = calibration_chart(three_way(df), three_way(past) if not past.empty else None, two_way=False,
+                              past_from=f"{season_label(HELD_OUT_FROM)}")
     if df.empty:
         return templates.TemplateResponse(request, "track_record.html", {"active": "track", "weeks": [],
-                                                                         "record_url": RECORD_URL})
+                                                                         "record_url": RECORD_URL, "calibration": calib})
     df["week"] = week_of(df["date"])
 
     weeks = []
@@ -810,6 +843,7 @@ def track_record(request: Request):
                             "benchmark": [getattr(r, f"mkt_{r.result}") for r in g.itertuples()]})
     return templates.TemplateResponse(request, "track_record.html", {
         "active": "track",
+        "calibration": calib,
         "record_chart": record_chart(chart_weeks, "the betting market"),
         "overall": live_scores(df),
         "weeks": weeks,
@@ -933,5 +967,14 @@ from cbb.site import router as cbb_router  # noqa: E402
 app.include_router(cbb_router)
 from nba.site import router as nba_router  # noqa: E402
 app.include_router(nba_router)
+from ucl.site import router as ucl_router  # noqa: E402
+app.include_router(ucl_router)
 from overview import router as overview_router  # noqa: E402
+
+
+@app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    """The home page is Today: every sport's games today (overview.py)."""
+    import overview
+    return overview.today_page(request)
 app.include_router(overview_router)

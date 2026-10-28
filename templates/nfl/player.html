@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "nfl/macros.html" import team_link %}
+{% block title %}{{ name }} | NFL probabilities{% endblock %}
+{% block main_style %} class="teamed team-page" style="{{ nfl_team_colors(team) }}"{% endblock %}
+{% block content %}
+<div class="intro">
+  <p class="eyebrow">{{ team_link(team, full=True) }}{% if position %} &middot; {{ position }}{% endif %}</p>
+  <h1>{{ name }}</h1>
+</div>
+
+{% if upcoming %}
+<section class="detail-section">
+  <h2>Next game</h2>
+  <div class="table-wrap"><table class="goals-table player-table">
+    <thead><tr><th scope="col">Game</th>{% if qb %}<th scope="col" class="num">Pass yds</th><th scope="col" class="num">Pass TD</th>{% endif %}<th scope="col" class="num">Rush yds</th>{% if not qb %}<th scope="col" class="num">Rec</th><th scope="col" class="num">Rec yds</th>{% endif %}<th scope="col" class="num">TD</th></tr></thead>
+    <tbody>{% for u in upcoming %}<tr><th scope="row"><a href="{{ u.url }}">{{ u.matchup }}</a><span class="muted small block">{{ u.date }}</span></th>{% if qb %}<td class="num">{{ u.pass_yds }}</td><td class="num">{{ u.pass_tds }}</td>{% endif %}<td class="num">{{ u.rush_yds }}</td>{% if not qb %}<td class="num">{{ u.rec }}</td><td class="num">{{ u.rec_yds }}</td>{% endif %}<td class="num">{{ u.td }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">The model's projection, saved before kickoff. "TD" is the chance of a rushing or receiving touchdown.</p>
+</section>
+{% endif %}
+
+{% if seasons %}
+<section class="detail-section">
+  <h2>Seasons</h2>
+  <div class="table-wrap"><table class="goals-table player-table">
+    <thead><tr><th scope="col">Season</th><th scope="col" class="num">Games</th>{% if qb %}<th scope="col" class="num">Pass yds</th><th scope="col" class="num">Pass TD</th><th scope="col" class="num">INT</th>{% endif %}<th scope="col" class="num">Rush yds</th>{% if not qb %}<th scope="col" class="num">Rec</th><th scope="col" class="num">Rec yds</th>{% endif %}<th scope="col" class="num">TD</th></tr></thead>
+    <tbody>{% for s in seasons %}<tr><th scope="row">{{ s.season }}</th><td class="num">{{ s.games }}</td>{% if qb %}<td class="num">{{ s.pass_yds }}</td><td class="num">{{ s.pass_tds }}</td><td class="num">{{ s.ints }}</td>{% endif %}<td class="num">{{ s.rush_yds }}</td>{% if not qb %}<td class="num">{{ s.rec }}</td><td class="num">{{ s.rec_yds }}</td>{% endif %}<td class="num">{{ s.tds }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">Regular season totals. "TD": rushing and receiving touchdowns.</p>
+</section>
+{% endif %}
+
+{% if log %}
+<section class="detail-section">
+  <h2>Recent games</h2>
+  <div class="table-wrap"><table class="goals-table player-table">
+    <thead><tr><th scope="col">Game</th>{% if qb %}<th scope="col" class="num">Pass yds</th><th scope="col" class="num">Pass TD</th>{% endif %}<th scope="col" class="num">Rush yds</th>{% if not qb %}<th scope="col" class="num">Rec</th><th scope="col" class="num">Rec yds</th>{% endif %}<th scope="col" class="num">TD</th></tr></thead>
+    <tbody>{% for g in log %}<tr><th scope="row"><a href="{{ g.url }}">{{ g.venue }} {{ g.opponent }}</a><span class="muted small block">{{ g.label }} &middot; {{ g.result }}</span></th>
+      {% if qb %}<td class="num">{% if g.proj %}{{ g.proj.pass_yds }} <span class="muted">({{ g.pass_yds }})</span>{% else %}{{ g.pass_yds }}{% endif %}</td><td class="num">{% if g.proj %}{{ g.proj.pass_tds }} <span class="muted">({{ g.pass_tds }})</span>{% else %}{{ g.pass_tds }}{% endif %}</td>{% endif %}
+      <td class="num">{% if g.proj %}{{ g.proj.rush_yds }} <span class="muted">({{ g.rush_yds }})</span>{% else %}{{ g.rush_yds }}{% endif %}</td>
+      {% if not qb %}<td class="num">{% if g.proj %}{{ g.proj.rec }} <span class="muted">({{ g.rec }})</span>{% else %}{{ g.rec }}{% endif %}</td><td class="num">{% if g.proj %}{{ g.proj.rec_yds }} <span class="muted">({{ g.rec_yds }})</span>{% else %}{{ g.rec_yds }}{% endif %}</td>{% endif %}
+      <td class="num">{% if g.proj %}{{ g.proj.td }} <span class="muted">({{ g.tds }})</span>{% else %}{{ g.tds }}{% endif %}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="note">Newest first. Where the model saved a projection before the game, it's shown first with what happened in brackets.</p>
+</section>
+{% endif %}
+{% endblock %}

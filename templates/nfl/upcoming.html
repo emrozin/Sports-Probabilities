@@ -27,11 +27,11 @@
     {% endif %}
   </section>
   {% endfor %}
-  <p class="note">Predictions use each team's expected starting quarterback and his rating, where a starter is listed (usually for this week's games). Further ahead, each team's usual starter is assumed. "Likeliest player props" are the {{ props_per_day }} common sportsbook props (passing yards from 225, rushing and receiving yards from 50, receptions from 4, and scoring a touchdown) the model thinks are likeliest to hit each day, one per player; likely to hit isn't the same as a good bet, since these aren't compared with the sportsbook's price. Predictions are refreshed on Tuesdays and Fridays, saved before kickoff and never changed afterwards: see the <a href="{{ base }}/nfl/track-record/">track record</a>.</p>
+  <p class="note">Predictions use each team's expected starting quarterback and his rating, where a starter is listed (usually for this week's games). Further ahead, each team's usual starter is assumed. "Likeliest player props" are the {{ props_per_day }} common sportsbook props (passing yards from 225, rushing and receiving yards from 50, receptions from 4, and scoring a touchdown) the model thinks are likeliest to hit each day, one per player; likely to hit isn't the same as a good bet, since these aren't compared with the sportsbook's price. Predictions are refreshed every morning and evening, saved before kickoff and never changed afterwards: see the <a href="{{ base }}/nfl/track-record/">track record</a>.</p>
 {% else %}
   <section class="empty">
     <h2>No upcoming games predicted yet</h2>
-    <p>Predictions for the next eight days of games are made on Tuesdays and Fridays. Run <code>python -m nfl.predict_upcoming</code> to make them now.</p>
+    <p>Predictions for the next eight days of games are made every morning and evening. Run <code>python -m nfl.predict_upcoming</code> to make them now.</p>
     <p><a class="button" href="{{ base }}/nfl/results/">See recent results</a></p>
   </section>
 {% endif %}

@@ -22,7 +22,7 @@
 {% else %}
   <section class="empty">
     <h2>No upcoming games predicted{% if conference %} for the {{ conference }}{% endif %}</h2>
-    <p>{% if season_starts %}The season tips off on {{ season_starts }}; forecasts appear up to eight days before each game.{% else %}Predictions for the next eight days are made on Tuesdays and Fridays.{% endif %} Run <code>python -m cbb.predict_upcoming</code> to make them now.</p>
+    <p>{% if season_starts %}The season tips off on {{ season_starts }}; forecasts appear up to eight days before each game.{% else %}Predictions for the next eight days are made every morning and evening.{% endif %} Run <code>python -m cbb.predict_upcoming</code> to make them now.</p>
     <p><a class="button" href="{{ base }}/cbb/results/">See recent results</a></p>
   </section>
 {% endif %}

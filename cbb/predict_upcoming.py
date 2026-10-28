@@ -13,12 +13,12 @@ import sys
 from datetime import datetime, timedelta
 
 from cbb import records
-from cbb.model import NON_D1, fit, load_games, predict, window
+from cbb.model import NON_D1, current_fit, load_games, predict
 from db import DB_PATH, SCHEMA_PATH
 from nfl.predict_upcoming import EASTERN, has_started
 
 MODEL_NAME = "cbb_points"
-MODEL_VERSION = "v2"
+MODEL_VERSION = "v3"     # v3: preseason ratings until mid-December
 DAYS_AHEAD = 8
 
 
@@ -47,8 +47,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
             records.export(conn, MODEL_NAME, MODEL_VERSION)
         conn.close()
         return
-    played = games[games["status"] == "final"]
-    model = fit(window(played, today.isoformat()), today.isoformat(), int(to_predict[0].season))
+    model = current_fit(games, today.isoformat(), int(to_predict[0].season))
     for g in to_predict:
         p = predict(model, g.home, g.away, bool(g.neutral_site))
         for outcome, prob in (("home", p["home_win"]), ("away", 1 - p["home_win"])):

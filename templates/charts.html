@@ -97,3 +97,33 @@
   </figure>
 </section>
 {% endmacro %}
+
+{# Calibration (charts.calibration_chart): predicted chance against how often it happened; on the diagonal is honest. #}
+{% macro calibration(chart) %}
+<section class="game-section calibration">
+  <h2>Are the chances honest?</h2>
+  <p class="section-note">{% if chart.two_way %}Games grouped by the chance the model gave its favorite, against how often the favorite actually won.{% else %}Every result's chance (home win, draw, away win), grouped, against how often that result happened.{% endif %} An honest model sits on the diagonal: its 70% calls happen about 70% of the time. Above the line, it was too cautious; below, overconfident.</p>
+  <div class="calib">
+    <figure class="calib-plot" aria-label="Calibration chart">
+      <div class="calib-frame"><div class="calib-area">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="100" x2="100" y2="0" class="calib-diag"/></svg>
+        {% for t in chart.ticks %}<span class="calib-grid-x" style="left: {{ t.pos }}%"></span><span class="calib-grid-y" style="bottom: {{ t.pos }}%"></span>{% endfor %}
+        {% for g in chart.past %}<span class="calib-pt calib-past" style="left: {{ g.x }}%; top: {{ g.y }}%" tabindex="0" data-tip="Backtest, {{ g.tip }}" aria-label="Backtest, {{ g.tip }}"></span>{% endfor %}
+        {% for g in chart.live %}<span class="calib-pt calib-live" style="left: {{ g.x }}%; top: {{ g.y }}%" tabindex="0" data-tip="Live, {{ g.tip }}" aria-label="Live, {{ g.tip }}"></span>{% endfor %}
+      </div>
+      <div class="calib-x" aria-hidden="true">{% for t in chart.ticks %}<span style="left: {{ t.pos }}%">{{ t.label }}</span>{% endfor %}</div>
+      <div class="calib-y" aria-hidden="true">{% for t in chart.ticks %}<span style="bottom: {{ t.pos }}%">{{ t.label }}</span>{% endfor %}</div></div>
+      <figcaption class="muted small">Across: the chance given. Up: how often it happened.</figcaption>
+    </figure>
+    <div class="table-wrap">
+      <table class="league calib-table">
+        <thead><tr><th scope="col">Chance given</th><th scope="col" class="num">Live</th><th scope="col" class="num">Backtest</th></tr></thead>
+        <tbody>{% for r in chart.rows %}<tr><th scope="row">{{ r.range }}</th>
+          <td class="num">{% if r.live %}{{ "%.0f"|format(r.live.actual) }}% <span class="muted small">of {{ r.live.n }}</span>{% else %}–{% endif %}</td>
+          <td class="num">{% if r.past %}{{ "%.0f"|format(r.past.actual) }}% <span class="muted small">of {{ "{:,}".format(r.past.n) }}</span>{% else %}–{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </div>
+  <p class="note"><span class="calib-key calib-live"></span> Live predictions (saved before the game{% if chart.live_n %}, {{ chart.live_n }} so far{% endif %}; groups with at least 5) &nbsp; <span class="calib-key calib-past"></span> Backtest: predictions for the held-out seasons{% if chart.past_from %} ({{ chart.past_from }} on){% endif %}, made from earlier games only; groups with at least 30. "Happened" is how often the {{ 'favorite won' if chart.two_way else 'result happened' }}. Live groups are small at first, so expect them to wander until the season fills them in.</p>
+</section>
+{% endmacro %}

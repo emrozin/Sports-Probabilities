@@ -40,7 +40,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import norm
 
-from cfb.model import MARGIN_SD, fit, load_games, predict, team_strength, window
+from cfb.model import MARGIN_SD, current_fit, load_games, predict, team_strength
 from db import DB_PATH, SCHEMA_PATH
 
 SIMULATIONS = 10_000
@@ -96,8 +96,7 @@ def setup(games: pd.DataFrame, season: int, as_of: str) -> dict:
     reg = reg[~is_title_game(reg) & (reg["home"].isin(conf_of) | reg["away"].isin(conf_of))]
     known = reg[(reg["status"] == "final") & (reg["date"] < as_of)]
     left = reg[~reg.index.isin(known.index)]
-    played = games[(games["status"] == "final") & (games["date"] < as_of)]
-    model = fit(window(played, as_of), as_of, season)
+    model = current_fit(games, as_of, season)
     margins = np.array([predict(model, g.home, g.away, bool(g.neutral_site))["margin"] for g in left.itertuples()])
     teams = sorted(set(reg["home"]) | set(reg["away"]))
     index = {t: i for i, t in enumerate(teams)}

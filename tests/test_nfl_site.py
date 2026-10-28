@@ -191,7 +191,21 @@ def test_update_keeps_going_when_one_sport_fails(monkeypatch, capsys):
     assert exit_info.value.code == 1
     assert ran == ["epl.import_epl", "nfl.import_nfl", "nfl.import_nfl_stats", "nfl.run_backtest",
                    "nfl.predict_upcoming", "nfl.predict_players", "nfl.season",
-                   "nba.import_nba", "nba.live", "nba.run_backtest", "nba.predict_upcoming", "nba.predict_players", "nba.season",
+                   "nba.import_nba", "nba.live", "nba.run_backtest", "nba.predict_upcoming", "nba.predict_players", "nba.prop_lines", "nba.season",
                    "cfb.import_cfb", "cfb.run_backtest", "cfb.predict_upcoming", "cfb.conference",
-                   "cbb.import_cbb", "cbb.run_backtest", "cbb.predict_upcoming", "espn", "betting"]
+                   "cbb.import_cbb", "cbb.run_backtest", "cbb.predict_upcoming",
+                   "ucl.import_espn", "ucl.import_understat", "ucl.squad_values", "ucl.run_backtest", "ucl.predict_upcoming", "ucl.season", "espn", "betting", "warm_cache"]
     assert "Premier League: Results, stats and odds" in capsys.readouterr().out
+
+
+def test_update_steps_can_carry_their_own_arguments(monkeypatch):
+    commands = []
+
+    class Result:
+        returncode = 0
+
+    monkeypatch.setattr(update.subprocess, "run", lambda command: commands.append(command[2:]) or Result())
+    monkeypatch.setattr(update.sys, "argv", ["update.py", "--record"])
+    update.main()
+    assert ["epl.import_epl", "--league", "CHAMP"] in commands          # the Championship, for promoted teams
+    assert ["epl.predict_upcoming", "--record"] in commands

@@ -11,7 +11,7 @@ written only by the automated run, like the Premier League's).
 
 Quarterbacks: nflverse lists each team's expected starter for the current week's games, and the
 model uses that quarterback's rating. Further ahead, no starter is listed yet, so the team's usual
-starter is assumed; the Tuesday and Friday runs refresh the predictions as starters are named.
+starter is assumed; the daily runs refresh the predictions as starters are named.
 """
 
 import sqlite3
@@ -25,10 +25,11 @@ from db import DB_PATH, SCHEMA_PATH
 from nfl import records
 from nfl.elo import load_nfl_games
 from nfl.import_nfl import ensure_columns
-from nfl.model import TRAINING_YEARS, add_qb_changes, fit, predict
+from nfl.model import TRAINING_YEARS, add_qb_changes, fit, missing, predict
+from nfl.starters import add_to_games, missing_starters
 
 MODEL_NAME = "nfl_points_qb"
-MODEL_VERSION = "v2"   # v2: quarterback ratings, shrinkage 5, margin SD 12 (v1, until 14 Oct 2026: a usual-starter flag)
+MODEL_VERSION = "v3"   # v3: missing starters; v2: quarterback ratings, shrinkage 5, margin SD 12 (v1, until 14 Oct 2026: a usual-starter flag)
 EASTERN = ZoneInfo("America/New_York")  # nflverse dates and kickoff times are US Eastern
 DAYS_AHEAD = 8
 
@@ -54,6 +55,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
                                            "WHERE model_name = ? AND model_version = ?", (MODEL_NAME, MODEL_VERSION))}
 
     games = add_qb_changes(load_nfl_games(conn))
+    games = add_to_games(games, missing_starters(conn, since=int(games["season"].max()) if len(games) else 0))
     kickoffs = dict(conn.execute("SELECT id, kickoff FROM games WHERE id IN (SELECT game_id FROM nfl_game_info)"))
     window = games[(games["status"] == "scheduled") & (games["date"] >= today.isoformat())
                    & (games["date"] <= (today + timedelta(days=DAYS_AHEAD)).isoformat())]
@@ -78,7 +80,8 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
     for g in to_predict:
         # Listed starters where nflverse has them; otherwise each team's usual starter.
         p = predict(model, g.home, g.away, bool(g.neutral_site), home_qb=g.home_qb_expected,
-                    away_qb=g.away_qb_expected, home_qb_starts=g.home_qb_starts, away_qb_starts=g.away_qb_starts)
+                    away_qb=g.away_qb_expected, home_qb_starts=g.home_qb_starts, away_qb_starts=g.away_qb_starts,
+                    home_missing=missing(g, "home"), away_missing=missing(g, "away"))
         for outcome, prob in (("home", p["home_win"]), ("away", 1 - p["home_win"])):
             conn.execute("""INSERT INTO predictions (game_id, model_name, model_version, outcome, probability)
                             VALUES (?, ?, ?, ?, ?)

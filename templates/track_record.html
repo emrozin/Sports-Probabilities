@@ -1,13 +1,13 @@
 {% extends "base.html" %}
 {% from "macros.html" import finished_match %}
-{% from "charts.html" import record_line %}
+{% from "charts.html" import record_line, calibration as calibration_section %}
 {% block title %}Track record | Premier League probabilities{% endblock %}
 
 {% block content %}
 <div class="intro">
   <h1>Track record</h1>
   <p>Every forecast here was made before kickoff and committed to a public file on GitHub, timestamped, before the match was played. Nothing is recalculated afterwards. This is the live test the backtest can only simulate.</p>
-  <p><a href="{{ record_url }}">See the prediction file</a>{% if history_url %} and <a href="{{ history_url }}">its history of commits</a>{% endif %}.</p>
+  <p><a href="{{ record_url }}">See the prediction file</a>{% if history_url %} and <a href="{{ history_url }}">its history of commits</a>{% endif %}. For every season since 2016/17, see <a href="{{ base }}/backtest/">the backtest</a>.</p>
 </div>
 
 {% if weeks %}
@@ -35,6 +35,9 @@
   {% endif %}
 </section>
 
+{% if record_chart %}<section class="detail-section">{{ record_line(record_chart, 'The record so far, week by week') }}</section>{% endif %}
+{% if calibration %}{{ calibration_section(calibration) }}{% endif %}
+
 <section class="detail-section">
   <h2>Week by week</h2>
   <div class="table-wrap">
@@ -44,7 +47,6 @@
             <th scope="col" class="num">Market</th><th scope="col" class="num">Favourite won</th></tr>
       </thead>
       <tbody>
-        {% if record_chart %}{{ record_line(record_chart, 'The record so far, week by week') }}{% endif %}
   {% for w in weeks %}
         <tr>
           <th scope="row">{{ w.label }}</th>
@@ -73,5 +75,6 @@
   <h2>No finished live predictions yet</h2>
   <p>Forecasts are saved before each round's first kickoff and appear here once the matches have been played. <a href="{{ record_url }}">See the prediction file</a>.</p>
 </section>
+{% if calibration %}{{ calibration_section(calibration) }}{% endif %}
 {% endif %}
 {% endblock %}

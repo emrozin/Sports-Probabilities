@@ -1,61 +1,86 @@
 {% extends "base.html" %}
 {% from "macros.html" import outcome_badge, season_picker %}
-{% block title %}Table | Premier League probabilities{% endblock %}
+{% block title %}Table and odds | Premier League probabilities{% endblock %}
 
 {% block content %}
 <div class="intro">
-  <h1>{% if is_current %}Premier League table{% else %}{{ season }} final table{% endif %}</h1>
-  <p>{% if has_xg %}Alongside the usual columns, expected goals (xG) show the quality of chances each team created and allowed. A team whose goals run well ahead of its xG may be riding luck that won't last.{% else %}Standings for {{ season }}.{% endif %}</p>
+  <h1>Premier League {{ season }}{% if not is_current %} final table{% endif %}</h1>
+  <p>{% if has_odds %}The table so far, and each club's chances from {{ simulations }} simulations of every game left. {% endif %}{% if has_xg %}Expected goals (xG) show the quality of chances each team created and allowed: a team whose goals run well ahead of its xG may be riding luck that won't last.{% elif not has_odds %}Standings for {{ season }}.{% endif %}</p>
+  {% if has_odds %}
+  <details class="explain"><summary>How the simulation works</summary>
+    <p>Each match still to play gets a random score drawn from the model's probabilities, and the results so far are kept. A club's chance of any finish is how often it happened across all the simulated seasons. "Top 4" is a top-four finish, the Champions League places; "Bottom 3" is the relegation places. <a href="{{ base }}/forecast/">Every club's chance of every position</a>.</p>
+  </details>
+  {% endif %}
   {% if seasons|length > 1 %}{{ season_picker(seasons) }}{% endif %}
 </div>
 
+{% if favorites %}
+<section class="today-section">
+  <h2>Favorites for the title</h2>
+  <ol class="favorites">{% for f in favorites %}<li>{{ epl_chip(f.team) }}<a class="team-link" href="{{ f.url }}">{{ f.team }}</a> <strong>{{ f.pct }}</strong></li>{% endfor %}</ol>
+</section>
+{% endif %}
+
 {% if rows %}
 <div class="table-wrap">
-  <table class="league">
+  <table class="league{% if has_odds %} league-odds{% endif %}">
     <thead>
       <tr>
-        <th scope="col" class="num"><abbr title="Position">Pos</abbr></th>
+        <th scope="col" class="num">#</th>
         <th scope="col">Team</th>
-        <th scope="col" class="num"><abbr title="Played">P</abbr></th>
-        <th scope="col" class="num"><abbr title="Won">W</abbr></th>
-        <th scope="col" class="num"><abbr title="Drawn">D</abbr></th>
-        <th scope="col" class="num"><abbr title="Lost">L</abbr></th>
+        <th scope="col" class="num{% if has_odds %} wide-only{% endif %}"><abbr title="Played">P</abbr></th>
+        <th scope="col" class="num wide-only"><abbr title="Won">W</abbr></th>
+        <th scope="col" class="num wide-only"><abbr title="Drawn">D</abbr></th>
+        <th scope="col" class="num wide-only"><abbr title="Lost">L</abbr></th>
         <th scope="col" class="num wide-only"><abbr title="Goals for">GF</abbr></th>
         <th scope="col" class="num wide-only"><abbr title="Goals against">GA</abbr></th>
-        <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th>
+        <th scope="col" class="num{% if has_odds %} wide-only{% endif %}"><abbr title="Goal difference">GD</abbr></th>
         {% if has_xg %}
         <th scope="col" class="num xg wide-only"><abbr title="Expected goals for">xGF</abbr></th>
         <th scope="col" class="num xg wide-only"><abbr title="Expected goals against">xGA</abbr></th>
         {% endif %}
         <th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
+        {% if has_odds %}
+        <th scope="col" class="num wide-only"><abbr title="Expected points at the end of the season">Proj</abbr></th>
+        <th scope="col" class="num"><abbr title="Chance of winning the league">Title</abbr></th>
+        <th scope="col" class="num"><abbr title="Chance of finishing in the top four">Top 4</abbr></th>
+        <th scope="col" class="num"><abbr title="Chance of finishing in the bottom three">Bottom 3</abbr></th>
+        {% else %}
         <th scope="col" class="form-col wide-only">Last 5</th>
+        {% endif %}
       </tr>
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr class="{% if r.first_relegation %}relegation-line{% endif %}{% if r.relegation %} relegation{% endif %}">
+      <tr class="{% if r.position == 4 %}zone-line{% endif %}{% if r.first_relegation %} relegation-line{% endif %}{% if r.relegation %} relegation{% endif %}">
         <td class="num pos">{{ r.position }}</td>
         <th scope="row">{{ epl_chip(r.team) }}<a class="team-link" href="{{ r.url }}">{{ r.team }}</a></th>
-        <td class="num">{{ r.played }}</td>
-        <td class="num">{{ r.won }}</td>
-        <td class="num">{{ r.drawn }}</td>
-        <td class="num">{{ r.lost }}</td>
+        <td class="num{% if has_odds %} wide-only{% endif %}">{{ r.played }}</td>
+        <td class="num wide-only">{{ r.won }}</td>
+        <td class="num wide-only">{{ r.drawn }}</td>
+        <td class="num wide-only">{{ r.lost }}</td>
         <td class="num wide-only">{{ r.gf }}</td>
         <td class="num wide-only">{{ r.ga }}</td>
-        <td class="num">{{ r.gd }}</td>
+        <td class="num{% if has_odds %} wide-only{% endif %}">{{ r.gd }}</td>
         {% if has_xg %}
         <td class="num xg wide-only">{{ r.xgf }}</td>
         <td class="num xg wide-only">{{ r.xga }}</td>
         {% endif %}
         <td class="num pts">{{ r.points }}</td>
+        {% if has_odds %}
+        <td class="num wide-only">{{ r.odds.expected_points if r.odds else '–' }}</td>
+        <td class="num"><strong>{{ r.odds.title if r.odds else '–' }}</strong></td>
+        <td class="num">{{ r.odds.top_four if r.odds else '–' }}</td>
+        <td class="num">{{ r.odds.relegation if r.odds else '–' }}</td>
+        {% else %}
         <td class="form-col wide-only"><span class="form">{% for f in r.form %}{{ outcome_badge(f) }}{% endfor %}</span></td>
+        {% endif %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-{% if is_current %}<p class="details-link"><a href="{{ base }}/forecast/">How the season could finish: the season forecast &rarr;</a></p>{% endif %}
-<p class="note">Ranked by points, then goal difference, then goals scored. The shaded rows below the line are the relegation places. Last 5 reads oldest to most recent. On small screens, goals, xG and form are hidden; open a team to see its matches.</p>
+<p class="note">Ranked by points, then goal difference, then goals scored. The line under 4th marks the top four; the shaded rows are the relegation places.{% if has_odds %} Odds are from today's simulation; <a href="{{ base }}/forecast/">every club's chance of every position</a>.{% endif %} On small screens some columns are hidden; open a team to see its matches.</p>
 {% else %}
   <section class="empty"><h2>No matches played yet</h2></section>
 {% endif %}

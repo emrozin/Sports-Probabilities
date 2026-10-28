@@ -15,10 +15,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from nfl.elo import load_nfl_games
-from nfl.model import HALF_LIFE_DAYS, INEXPERIENCE_STARTS, MARGIN_SD, TRAINING_YEARS, add_qb_changes, fit, qb_value
+from nfl.model import (HALF_LIFE_DAYS, INEXPERIENCE_STARTS, MARGIN_SD, TRAINING_YEARS, add_qb_changes, fit, injury_effect,
+                       missing, qb_value)
+from nfl.starters import add_to_games, missing_starters
 from nfl.predict_upcoming import MODEL_NAME
 from nfl.run_backtest import BACKTEST_NAME, BACKTEST_VERSION, HELD_OUT_FROM, START_SEASON
-from web import BASE, ROOT, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability, why
+from web import BASE, ROOT, calibration_pairs, day_label, edge, ordinal, signed_number, slugify, templates, typical_probability, why
 import betting
 import blend
 
@@ -198,7 +200,8 @@ def data() -> dict:
             extra = pd.read_sql("""SELECT i.game_id AS id, g.kickoff, i.source_game_id, i.total_line,
                                           i.home_moneyline, i.away_moneyline, i.stadium, i.overtime
                                    FROM nfl_game_info i JOIN games g ON g.id = i.game_id""", conn)
-            games = add_qb_changes(games).merge(extra, on="id")
+            games = add_to_games(add_qb_changes(games).merge(extra, on="id"),
+                                 missing_starters(conn, since=int(games["season"].max()) if len(games) else 0))
             live = load_live(conn).assign(source="Saved before kickoff")
             back = load_predictions(conn, BACKTEST_NAME, BACKTEST_VERSION).assign(source="Backtest")
             predictions = pd.concat([live, back[~back["id"].isin(live["id"])]], ignore_index=True)
@@ -721,7 +724,7 @@ def player_projections(game_id: int, finished: bool) -> list[dict] | None:
         for r in rows.itertuples():
             if r.position != "QB" and r.rush_yds + r.rec_yds < 5:
                 continue   # too small a role to be worth listing
-            row = {"name": r.name, "position": r.position, "qb": r.position == "QB",
+            row = {"name": r.name, "url": player_url(r.player_id), "position": r.position, "qb": r.position == "QB",
                    "pass_yds": fmt(r.pass_yds), "pass_tds": fmt(r.pass_tds, 1), "ints": fmt(r.ints, 1),
                    "rush_yds": fmt(r.rush_yds), "receptions": fmt(r.receptions, 1), "rec_yds": fmt(r.rec_yds),
                    "anytime_td": f"{r.anytime_td * 100:.0f}%", "actual": None,
@@ -780,7 +783,7 @@ def likeliest(game_ids: list[int], by: str, n: int) -> pd.DataFrame:
 
 
 def prop_rows(picks: pd.DataFrame) -> list[dict]:
-    return [{"name": r.name, "team": r.team, "position": r.position, "prop": r.prop,
+    return [{"name": r.name, "player_url": player_url(r.player_id), "team": r.team, "position": r.position, "prop": r.prop,
              "chance": ">95%" if r.chance >= 0.95 else f"{r.chance * 100:.0f}%", "hit": r.hit,
              "matchup": r.matchup, "url": r.url} for r in picks.itertuples()]
 
@@ -814,6 +817,10 @@ def why_pick(g) -> dict | None:
                       if all(isinstance(n, str) for n in names.values()) else "")},
             {"label": "Home field", "value": 0.0 if g.neutral_site else model["home_adv"],
              "note": "Neutral site" if g.neutral_site else ""}]
+    names = [f"{team_name(getattr(g, side))}: {getattr(g, f'{side}_missing_names')}" for side in ("away", "home")
+             if isinstance(getattr(g, f"{side}_missing_names", None), str)]
+    rows.append({"label": "Missing starters", "value": injury_effect(missing(g, "home"), missing(g, "away")),
+                 "note": "; ".join(names) if names else "None of either team's regular starters ruled out"})
     market_home = getattr(g, "mkt_home", np.nan)
     if pd.isna(market_home):
         market_home = no_vig(g.home_moneyline, g.away_moneyline)
@@ -957,8 +964,12 @@ def track_record(request: Request):
     live = d["predictions"][d["predictions"]["source"] == "Saved before kickoff"]
     df = (finished_games().merge(live, on="id").merge(d["closing"], on="id", how="left")
           .sort_values(["date", "kickoff", "home"]))
+    from charts import calibration_chart
+    past = finished_games().merge(d["backtest"], on="id")
+    calib = calibration_chart(calibration_pairs(df), calibration_pairs(past[past["season"] >= HELD_OUT_FROM]),
+                              past_from=f"{HELD_OUT_FROM}")
     context = {"active": "track", "record_url": RECORD_URL, "history_url": RECORD_HISTORY_URL, "weeks": [],
-               "players": player_track(), "player_record_url": PLAYER_RECORD_URL}
+               "players": player_track(), "player_record_url": PLAYER_RECORD_URL, "calibration": calib}
     if df.empty:
         return render(request, "track_record.html", context)
     weeks = []
@@ -1076,3 +1087,75 @@ def quarterback_rows(model: dict, teams: list[str]) -> list[dict]:
                      "class": "good" if value > 0 else "bad" if value < 0 else "",
                      "starts": None if pd.isna(starts) else int(starts)})
     return sorted(rows, key=lambda r: -r["raw"])
+
+
+# ---------------------------------------------------------------- player pages
+
+def player_url(player_id) -> str:
+    return f"{BASE}/nfl/player/{player_id}/"
+
+
+templates.env.globals["nfl_player_url"] = player_url
+GAME_LOG = 10
+LOG_STATS = ["completions", "pass_attempts", "passing_yards", "passing_tds", "interceptions", "carries", "rushing_yards",
+             "rushing_tds", "targets", "receptions", "receiving_yards", "receiving_tds"]
+
+
+@router.get("/player/{player_id}/", response_class=HTMLResponse)
+def player_page(request: Request, player_id: str):
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=404)
+    with connect() as conn:
+        if conn.execute("SELECT name FROM sqlite_master WHERE name = 'nfl_player_stats'").fetchone() is None:
+            raise HTTPException(status_code=404)
+        log = pd.read_sql(f"""SELECT s.game_id, s.name, s.position, s.team, {', '.join('s.' + c for c in LOG_STATS)},
+                                     g.date, g.season, i.week, i.game_type, i.source_game_id, h.name AS home, a.name AS away,
+                                     g.home_score, g.away_score
+                              FROM nfl_player_stats s JOIN games g ON g.id = s.game_id JOIN nfl_game_info i ON i.game_id = g.id
+                              JOIN teams h ON h.id = g.home_team_id JOIN teams a ON a.id = g.away_team_id
+                              WHERE s.player_id = ? ORDER BY g.date""", conn, params=(player_id,))
+        has = conn.execute("SELECT name FROM sqlite_master WHERE name = 'nfl_player_projections'").fetchone()
+        proj = pd.read_sql("SELECT * FROM nfl_player_projections WHERE player_id = ?", conn, params=(player_id,)) if has else pd.DataFrame()
+    if log.empty and proj.empty:
+        raise HTTPException(status_code=404)
+    latest = log.iloc[-1] if not log.empty else proj.iloc[-1]
+    qb = latest["position"] == "QB"
+    seasons = []
+    for season, part in sorted(log.groupby("season"), key=lambda kv: kv[0], reverse=True)[:3]:
+        reg = part[part["game_type"] == "REG"]
+        if reg.empty:
+            continue
+        tot = reg[LOG_STATS].fillna(0).sum()
+        seasons.append({"season": int(season), "games": len(reg), "pass_yds": int(tot["passing_yards"]),
+                        "pass_tds": int(tot["passing_tds"]), "ints": int(tot["interceptions"]),
+                        "rush_yds": int(tot["rushing_yards"]), "rec": int(tot["receptions"]), "rec_yds": int(tot["receiving_yards"]),
+                        "tds": int(tot["rushing_tds"] + tot["receiving_tds"])})
+    by_game = proj.set_index("game_id") if not proj.empty else pd.DataFrame()
+    fmt = lambda v, d=0: "–" if v is None or pd.isna(v) else f"{v:.{d}f}"
+    games_log = []
+    for r in log.iloc[::-1].head(GAME_LOG).itertuples():
+        at_home = r.home == r.team
+        hs, as_ = int(r.home_score), int(r.away_score)
+        own, opp_score = (hs, as_) if at_home else (as_, hs)
+        p = by_game.loc[r.game_id] if r.game_id in by_game.index else None
+        games_log.append({"label": f"{r.season} {week_label(r.game_type, r.week)}", "opponent": r.away if at_home else r.home,
+                          "venue": "vs" if at_home else "at", "url": game_url(r.source_game_id),
+                          "result": f"{'W' if own > opp_score else 'L' if own < opp_score else 'T'} {own}–{opp_score}",
+                          "pass_yds": fmt(r.passing_yards), "pass_tds": fmt(r.passing_tds), "rush_yds": fmt(r.rushing_yards),
+                          "rec": fmt(r.receptions), "rec_yds": fmt(r.receiving_yards),
+                          "tds": fmt((r.rushing_tds or 0) + (r.receiving_tds or 0)),
+                          "proj": {"pass_yds": fmt(p["pass_yds"]), "pass_tds": fmt(p["pass_tds"], 1), "rush_yds": fmt(p["rush_yds"]),
+                                   "rec": fmt(p["receptions"], 1), "rec_yds": fmt(p["rec_yds"]),
+                                   "td": f"{p['anytime_td'] * 100:.0f}%"} if p is not None else None})
+    upcoming = []
+    games = data()["games"].set_index("id")
+    for r in proj.itertuples() if not proj.empty else []:
+        if r.game_id in games.index and games.at[r.game_id, "status"] == "scheduled":
+            g = games.loc[r.game_id]
+            upcoming.append({"label": f"{g['date']}", "date": day_label(g["date"]), "matchup": f"{g['away']} at {g['home']}",
+                             "url": game_url(g["source_game_id"]), "pass_yds": fmt(r.pass_yds), "pass_tds": fmt(r.pass_tds, 1),
+                             "rush_yds": fmt(r.rush_yds), "rec": fmt(r.receptions, 1), "rec_yds": fmt(r.rec_yds),
+                             "td": f"{r.anytime_td * 100:.0f}%"})
+    return render(request, "player.html", {"active": None, "name": latest["name"], "team": latest["team"],
+                                           "team_name": team_name(latest["team"]), "position": latest["position"], "qb": qb,
+                                           "seasons": seasons, "log": games_log, "upcoming": upcoming})

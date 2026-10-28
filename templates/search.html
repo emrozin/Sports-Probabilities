@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Search{% if query %}: {{ query }}{% endif %} | Sports probabilities{% endblock %}
+{% block body_class %} on-search{% endblock %}
+{% block content %}
+<div class="intro">
+  <h1>Search</h1>
+  <form class="search-page" action="{{ base }}/search/" method="get" role="search">
+    <input type="search" name="q" value="{{ query }}" placeholder="A team or a player" aria-label="Search teams and players" autofocus>
+    <button type="submit">Search</button>
+  </form>
+</div>
+{% if query %}
+<section class="today-section">
+  {% if results %}
+  <p class="section-note">{{ results|length }} result{{ '' if results|length == 1 else 's' }} for "{{ query }}".</p>
+  <ul class="search-results">
+    {% for r in results %}
+    <li><a href="{{ r.url }}">{{ r.name }}</a> <span class="muted small">{{ r.kind }} &middot; {{ r.sport }}{% if r.detail %} &middot; {{ r.detail }}{% endif %}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>Nothing found for "{{ query }}". Try part of a name: "lake" finds the Lakers, "jok" finds Nikola Jokic. Players are NBA and NFL players from the last two seasons.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

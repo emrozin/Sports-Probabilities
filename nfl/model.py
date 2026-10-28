@@ -40,6 +40,10 @@ SHRINKAGE = 5.0       # pull team ratings toward average (L2 regularization)
 QB_SHRINKAGE = 10.0   # pull quarterback ratings toward average (stronger: a QB has fewer games than a team)
 INEXPERIENCE_STARTS = 32  # the inexperience term fades to nothing by this many career starts
 MARGIN_SD = 12.0      # typical gap between the actual and expected margin, in points
+# Missing starters (nfl/starters.py): points of margin per regular starter ruled out (the sum of
+# their snap shares), fitted on 2013-2017 by python -m nfl.starters; held-out log loss 0.6298 -> 0.6290.
+INJURY_OFFENSE = -0.78
+INJURY_DEFENSE = -0.91
 TRAINING_YEARS = 4
 
 USUAL_STARTER_GAMES = 8
@@ -143,18 +147,32 @@ def qb_value(model: dict, qb, starts) -> float:
 
 
 def predict(model: dict, home: str, away: str, neutral: bool = False, margin_sd=MARGIN_SD,
-            home_qb=None, away_qb=None, home_qb_starts=np.nan, away_qb_starts=np.nan) -> dict:
+            home_qb=None, away_qb=None, home_qb_starts=np.nan, away_qb_starts=np.nan,
+            home_missing=(0.0, 0.0), away_missing=(0.0, 0.0)) -> dict:
     """Expected points for each side, the expected home margin and total, and the home win probability.
-    home_qb / away_qb: the expected starters (None: no quarterback adjustment)."""
+    home_qb / away_qb: the expected starters (None: no quarterback adjustment). home_missing /
+    away_missing: (offense, defense) snap shares of regular starters ruled out (nfl/starters.py)."""
     r = model["ratings"]
     edge = 0.0 if neutral else model["home_adv"] / 2
     home_pts = (model["base"] + edge + r.at[home, "offense"] - r.at[away, "defense"]
                 + qb_value(model, home_qb, home_qb_starts))
     away_pts = (model["base"] - edge + r.at[away, "offense"] - r.at[home, "defense"]
                 + qb_value(model, away_qb, away_qb_starts))
+    injuries = injury_effect(home_missing, away_missing)       # split evenly between the two scores
+    home_pts, away_pts = home_pts + injuries / 2, away_pts - injuries / 2
     margin = home_pts - away_pts
     return {"home_points": home_pts, "away_points": away_pts, "margin": margin, "total": home_pts + away_pts,
             "home_win": float(norm.cdf(margin / margin_sd))}
+
+
+def injury_effect(home_missing=(0.0, 0.0), away_missing=(0.0, 0.0)) -> float:
+    """Points of home margin from missing starters: (offense, defense) shares for each side."""
+    return float(INJURY_OFFENSE * (home_missing[0] - away_missing[0]) + INJURY_DEFENSE * (home_missing[1] - away_missing[1]))
+
+
+def missing(g, side: str) -> tuple[float, float]:
+    """A game row's (offense, defense) missing starters for one side (0 if not added)."""
+    return (float(getattr(g, f"{side}_missing_off", 0.0) or 0.0), float(getattr(g, f"{side}_missing_def", 0.0) or 0.0))
 
 
 def backtest(games: pd.DataFrame, start_season: int, half_life_days=HALF_LIFE_DAYS, shrinkage=SHRINKAGE,
@@ -176,7 +194,8 @@ def backtest(games: pd.DataFrame, start_season: int, half_life_days=HALF_LIFE_DA
             if g.home not in known or g.away not in known:
                 continue
             p = predict(model, g.home, g.away, bool(g.neutral_site), margin_sd,
-                        g.home_qb_expected, g.away_qb_expected, g.home_qb_starts, g.away_qb_starts)
+                        g.home_qb_expected, g.away_qb_expected, g.home_qb_starts, g.away_qb_starts,
+                        missing(g, "home"), missing(g, "away"))
             rows.append({"id": g.id, "model_home": p["home_win"], "model_margin": p["margin"],
                          "model_total": p["total"], "home_points": p["home_points"],
                          "away_points": p["away_points"]})

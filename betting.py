@@ -65,13 +65,22 @@ def sports() -> dict:
     from nba.run_backtest import BACKTEST_NAME as NBA_BT, BACKTEST_VERSION as NBA_BV, HELD_OUT_FROM as NBA_HO
     from nfl.predict_upcoming import MODEL_NAME as NFL_LIVE
     from nfl.run_backtest import BACKTEST_NAME as NFL_BT, BACKTEST_VERSION as NFL_BV, HELD_OUT_FROM as NFL_HO
+    from ucl.cups import CUPS
+    from ucl.predict_upcoming import MODEL_NAME as UCL_LIVE
+    from ucl.run_backtest import BACKTEST_NAME as UCL_BT, BACKTEST_VERSION as UCL_BV, HELD_OUT_FROM as UCL_HO
     return {
-        "EPL": {"name": "Premier League", "live": EPL_LIVE, "backtest": (EPL_BT, EPL_BV), "held_out": EPL_HO, "url": "/"},
+        "EPL": {"name": "Premier League", "live": EPL_LIVE, "backtest": (EPL_BT, EPL_BV), "held_out": EPL_HO, "url": "/premier-league/"},
         "NFL": {"name": "NFL", "live": NFL_LIVE, "backtest": (NFL_BT, NFL_BV), "held_out": NFL_HO, "url": "/nfl/"},
         "NBA": {"name": "NBA", "live": NBA_LIVE, "backtest": (NBA_BT, NBA_BV), "held_out": NBA_HO, "url": "/nba/"},
         "CFB": {"name": "College football", "live": CFB_LIVE, "backtest": (CFB_BT, CFB_BV), "held_out": CFB_HO, "url": "/cfb/"},
         "CBB": {"name": "College basketball", "live": CBB_LIVE, "backtest": (CBB_BT, CBB_BV), "held_out": CBB_HO, "url": "/cbb/"},
+        **{code: {"name": cup["name"], "live": UCL_LIVE, "backtest": (UCL_BT, UCL_BV), "held_out": UCL_HO, "url": cup["url"]}
+           for code, cup in CUPS.items()},
     }
+
+
+THREE_WAY = {"EPL", "UCL", "UEL", "UECL", "ESP", "GER", "ITA", "FRA"}   # soccer: a draw is one of the results
+CUP_CODES = ("UCL", "UEL", "UECL", "ESP", "GER", "ITA", "FRA")         # soccer priced by DraftKings via ESPN
 
 
 # ---------------------------------------------------------------- reading
@@ -141,6 +150,9 @@ def prices(conn, league: str) -> pd.DataFrame:
         out = pd.concat([pd.DataFrame({"game_id": df["game_id"], "outcome": side,
                                        "price": df[f"{side}_moneyline"].map(american_to_decimal)}) for side in ("home", "away")])
         return out.dropna(subset=["price"])
+    if league in CUP_CODES:   # DraftKings' latest three-way price, from ESPN (ucl/import_espn.py)
+        return pd.read_sql("""SELECT game_id, outcome, price FROM odds WHERE bookmaker = 'DraftKings' AND market = '1x2'
+                              AND is_closing = 1""", conn)
     espn = espn_prices(conn, league)
     if league == "CFB":
         consensus = pd.read_sql("""SELECT game_id, outcome, price FROM odds WHERE bookmaker = 'consensus'
@@ -165,6 +177,10 @@ def fair_closing(conn, league: str, live: bool = False) -> pd.DataFrame:
                             AND market = '1x2' AND is_closing = 1""", conn)
     elif league in ("NBA", "CBB", "CFB"):
         df = espn_prices(conn, league, closing=True)
+    elif league in CUP_CODES:   # the last price saved before kickoff
+        df = prices(conn, league)
+        done = pd.read_sql("SELECT id AS game_id FROM games WHERE status = 'final'", conn)
+        df = df[df["game_id"].isin(done["game_id"])]
     else:
         return pd.DataFrame(columns=["game_id", "outcome", "q_close"])
     if df.empty:
@@ -262,7 +278,7 @@ def history(conn, league: str, min_edge: float = MIN_EDGE) -> dict | None:
     picks = picks[(picks["season"] >= info["held_out"]) & (picks["season"] < current) & (picks["status"] == "final")]
     if picks.empty:
         return None
-    settled = settle(picks, rows, three_way=league == "EPL").dropna(subset=["profit"])
+    settled = settle(picks, rows, three_way=league in THREE_WAY).dropna(subset=["profit"])
     settled = settled.merge(fair_closing(conn, league), on=["game_id", "outcome"], how="left")
     profit = settled["profit"].to_numpy()
     low, high = roi_range(profit)
@@ -339,7 +355,7 @@ def logged(conn) -> pd.DataFrame:
     out = []
     for league, group in bets.groupby("league"):
         rows = games(conn, league)
-        settled = settle(group, rows, three_way=league == "EPL").merge(rows[["game_id", "date", "kickoff", "home", "away"]], on="game_id")
+        settled = settle(group, rows, three_way=league in THREE_WAY).merge(rows[["game_id", "date", "kickoff", "home", "away"]], on="game_id")
         out.append(settled.merge(fair_closing(conn, league, live=True), on=["game_id", "outcome"], how="left"))
     df = pd.concat(out, ignore_index=True)
     df["clv"] = df["price"] * df["q_close"] - 1

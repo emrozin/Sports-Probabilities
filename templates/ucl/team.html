@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "ucl/macros.html" import ucl_card with context %}
+{% from "macros.html" import outcome_badge %}
+{% block title %}{{ team }} | {{ cup.name }} probabilities{% endblock %}
+{% block main_style %} class="teamed" style="{{ ucl_team_colors(team) }}"{% endblock %}
+{% block content %}
+<div class="intro team-intro">
+  <h1>{{ team }}<button type="button" class="follow" data-follow="{{ cup.code|lower }}:{{ team }}" aria-pressed="false"><span aria-hidden="true">★</span> <span class="follow-label">Follow</span></button></h1>
+  {% if other_cups %}<p class="muted">Also in this season's {% for c in other_cups %}<a href="{{ c.url }}">{{ c.name }}</a>{% if not loop.last %} and {% endif %}{% endfor %}.</p>{% endif %}
+  {% if info %}<p>{{ info.league }}. Rating <strong>{{ info.rating }}</strong> goals a game against an average big-five-league club, {{ info.rank }}{{ 'st' if info.rank % 10 == 1 and info.rank != 11 else 'nd' if info.rank % 10 == 2 and info.rank != 12 else 'rd' if info.rank % 10 == 3 and info.rank != 13 else 'th' }} in Europe (<a href="{{ base }}{{ cup.url }}ratings/">all ratings</a>).</p>{% endif %}
+</div>
+{% if odds %}
+<section class="today-section">
+  <h2>{{ season_name }} chances</h2>
+  <div class="scorecard">
+    {% if cup.kind == 'league' %}
+    <div class="stat"><p class="stat-value">{{ odds.champion }}</p><p class="stat-label">Win the league</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.top4 }}</p><p class="stat-label">Top 4</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.bottom3 }}</p><p class="stat-label">Bottom 3</p></div>
+    {% else %}
+    <div class="stat"><p class="stat-value">{{ odds.top8 }}</p><p class="stat-label">Top 8</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.round_of_16 }}</p><p class="stat-label">Round of 16</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.quarterfinals }}</p><p class="stat-label">Quarter-finals</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.final }}</p><p class="stat-label">Final</p></div>
+    <div class="stat"><p class="stat-value">{{ odds.champion }}</p><p class="stat-label">Win it</p></div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+{% if cards %}
+<section class="today-section">
+  <h2>{{ season_name }} {{ cup.name }}</h2>
+  <ul class="matches">{% for m in cards %}{{ ucl_card(m, team) }}{% endfor %}</ul>
+</section>
+{% endif %}
+{% if recent %}
+<section class="today-section">
+  <h2>Latest games, every competition</h2>
+  <ol class="form-list">{% for f in recent %}<li>{{ outcome_badge(f.outcome) }} {{ f.score }} {{ 'v' if f.venue == 'H' else 'at' }} {{ f.opponent }} <span class="muted small">{{ f.competition }}, {{ f.date }}</span></li>{% endfor %}</ol>
+</section>
+{% endif %}
+{% endblock %}

@@ -15,12 +15,12 @@ import sys
 from datetime import datetime, timedelta
 
 from cfb import records
-from cfb.model import fit, load_games, predict, window
+from cfb.model import current_fit, load_games, predict
 from db import DB_PATH, SCHEMA_PATH
 from nfl.predict_upcoming import EASTERN, has_started
 
 MODEL_NAME = "cfb_points"
-MODEL_VERSION = "v2"   # v2: quarterback ratings (each team's starter from its previous game)
+MODEL_VERSION = "v3"   # v2: quarterback ratings (each team's starter from its previous game); v3: preseason ratings
 DAYS_AHEAD = 8
 
 
@@ -50,8 +50,7 @@ def main(argv: list[str] | None = None, now: datetime | None = None) -> None:
             records.export(conn, MODEL_NAME, MODEL_VERSION)
         conn.close()
         return
-    played = games[games["status"] == "final"]
-    model = fit(window(played, today.isoformat()), today.isoformat(), int(to_predict[0].season))
+    model = current_fit(games, today.isoformat(), int(to_predict[0].season))
     for g in to_predict:
         p = predict(model, g.home, g.away, bool(g.neutral_site), home_qb=g.home_qb_expected, away_qb=g.away_qb_expected,
                     home_qb_starts=g.home_qb_expected_starts, away_qb_starts=g.away_qb_expected_starts)

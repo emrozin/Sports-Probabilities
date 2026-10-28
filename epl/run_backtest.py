@@ -4,7 +4,7 @@ Usage:
     python -m epl.run_backtest
 
 For every week since 2016/17, the model is trained only on matches played before
-that week and predicts that week's games. The predictions are saved under their
+that week (Premier League and Championship) and predicts that week's games. The predictions are saved under their
 own model name, separate from the live predictions made by predict_upcoming.py.
 The website's backtest and results pages read them. Re-run after importing new
 results so the backtest covers the latest matches (it takes a few seconds).
@@ -13,11 +13,11 @@ results so the backtest covers the latest matches (it takes a few seconds).
 import sqlite3
 from pathlib import Path
 
-from epl.model import backtest, load_games
+from epl.model import backtest, load_with_championship
 
 DB_PATH = "data/sports.db"
 BACKTEST_NAME = "poisson_xg_backtest"
-BACKTEST_VERSION = "v2"
+BACKTEST_VERSION = "v3"           # v3: Championship matches help rate promoted teams
 START_SEASON = 2016
 HELD_OUT_FROM = 2021  # settings were tuned on 2016/17-2020/21; 2021/22 onward is the honest test
 
@@ -25,7 +25,7 @@ HELD_OUT_FROM = 2021  # settings were tuned on 2016/17-2020/21; 2021/22 onward i
 def main() -> None:
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(Path("schema.sql").read_text())  # adds any tables an older database is missing
-    games = load_games(conn)
+    games = load_with_championship(conn)
     results = backtest(games, start_season=START_SEASON)
 
     rows = [

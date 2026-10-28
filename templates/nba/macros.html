@@ -8,7 +8,7 @@
 
 {% macro game_card(g, current_team=None) %}
   {% set fav = ('home' if g.model.home >= g.model.away else 'away') if g.model else none %}
-  <li class="match card teamed{% if g.finished %} is-finished{% endif %}" style="{{ nba_colors(g.home, g.away) }}">
+  <li class="match card teamed{% if g.finished %} is-finished{% endif %}" style="{{ nba_colors(g.home, g.away) }}" data-teams="nba:{{ g.home }}|nba:{{ g.away }}">
     <div class="card-top">
       <span class="card-when">
         {% if g.outcome %}<span class="badge badge-{{ g.outcome }}">{{ g.outcome }}</span>{% endif %}
